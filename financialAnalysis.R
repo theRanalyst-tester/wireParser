@@ -134,11 +134,11 @@ parseCapOne <- function(file) {
     textBlock <- txt[s:f]
 
     DIDX <- grep("^Wire Date", textBlock, ignore.case=T)
-    date <- str_extract(textBlock[DIDX], "../../....")
+    date <- str_extract(textBlock[DIDX], "\\d+/\\d+/\\d+")
     AIDX <- grep("^Amount", textBlock, ignore.case=T)
     amount <- str_extract(textBlock[AIDX], "[0-9,\\.l]+") %>% str_replace_all("[\\s,]", "")
     #common OCR mistake is to confuse a "1" with an "l", so replace it
-    amount %<>% str_replace_all("l", "1", .)
+    amount %<>% str_replace_all("l", "1")
     errorFlag <- as.numeric(amount) %>% is.na()
     if (errorFlag) {
       amount <- readline(prompt=paste(amount, "appears to be non-numeric. What should the value be? "))
@@ -150,19 +150,35 @@ parseCapOne <- function(file) {
     TIDX <- grep("^Time", textBlock, ignore.case=T)
     time <- str_extract(textBlock[TIDX], "..:..:..$")
     MIDX <- grep("^OBI\\s+", textBlock)[1]
-    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-z]+\\s?([A-z]+)?")
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
-    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10})[A-z]+\\s?([A-z]+)?") %>%
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     BBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
-    bBank <- str_extract(textBlock[BBIDX], "(?<=Recv Name\\s{1,10})[A-z]+\\s?([A-z]+)?") %>%
+    bBank <- str_extract(textBlock[BBIDX], "(?<=Recv Name\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     BANIDX <- grep("^BNF ID", textBlock)[1]
     bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10})[A-z0-9]+")
     IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
-    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10})[A-z]+\\s?([A-z]+)?") %>%
+    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    OIDX <- grep("^Originator", textBlock, ignore.case=T)[1]
+    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    OBIDX <- grep("^Sender Name", textBlock, ignore.case=T)[1]
+    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
+    oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10})[A-z0-9]+")
+
+    return(c("Date"=date, "Time"=time, "Amount"=amount, "Currency"=cur, "Originator"=orig,
+             "originatorAcctNum"=oAcctNum, "originatorBank"=oBank,
+             "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+             "Beneficiary"=bnf, "Memo"=memo))
   }))
+  dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
+  return(dat)
 }
 
 parseWireData <- function(file, bank, format) {
