@@ -12,7 +12,7 @@ library(network)
 library(RColorBrewer)
 
 parseBOA <- function(file) {
-  dat <- NULL
+  dat_m <- NULL
   cmd <- paste('pdftotext -layout "', file, '"', sep='')
   system(cmd)
   txtFile <- file %>% file_path_sans_ext() %>% paste(., '.txt', sep='')
@@ -20,7 +20,7 @@ parseBOA <- function(file) {
 
   SIDX <- grep("<\\s<\\s<\\s", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
-  dat <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
     s <- SIDX[idx]
     f <- FIDX[idx]
     textBlock <- txt[s:f]
@@ -96,34 +96,54 @@ parseBOA <- function(file) {
              "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
              "Beneficiary"=bnf, "Memo"=memo))
   }))
+  dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
   return(dat)
 }
 
 parseBNYMellon <- function(file) {
-  dat <- NULL
+  dat_m <- NULL
   temp <- read_excel(file, col_names=F)
   txt <- temp$X0
   SIDX <- grep("PAYMT\\s+TRN\\s+[A-Z0-9]{16}", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
-  dat <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+    s <- SIDX[idx]
+    f <- FIDX[idx]
+    textBlock <- txt[s:f]
+  }))
+}
+
+parseCapOne <- function(file) {
+  dat_m <- NULL
+  cmd <- paste('pdftotext -layout "', file, '"', sep='')
+  system(cmd)
+  txtFile <- file %>% file_path_sans_ext() %>% paste(., '.txt', sep='')
+  txt <- read_lines(txtFile)
+
+  SIDX <- grep("MIF_AMOUNT", txt)
+  FIDX <- c(tail(SIDX, -1) - 1, length(txt))
+  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
     s <- SIDX[idx]
     f <- FIDX[idx]
     textBlock <- txt[s:f]
 
 
-}
+  }))
 
 parseWireData <- function(file, bank, format) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
   if (tolower(bank) == "bank of america") {
     if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
-    dat <- parseBOA(file)
+    parseBOA(file)
   }
   if (tolower(bank) == "bnymellon") {
     if (tolower(format) != "xlsx") stop("BNY Mellon typically sends XLSX files. Are you sure this is the right format?")
-    dat <- parseBNY(file)
+    parseBNY(file)
   }
-  return(dat)
+  if (tolower(bank) == "capital one") {
+    if (tolower(format) != "pdf") stop("Capital One typically sends PDF files. Are you sure this is the right format?")
+    parseCapOne(file)
+  }
 }
 
 
