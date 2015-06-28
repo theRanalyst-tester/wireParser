@@ -2,7 +2,7 @@
 The wireParser app is an attempt at automating the scheduling of financial wire transfer documents that are received when a bank or other financial instutition is subpoenaed. An analyst can take hours, or even days, to enter all of the data from these documents in an Excel spreadsheet for further analysis. With this tool, that scheduling happens almost instantly, which allows more time for actual analysis. 
 
 #### How to Use the App
-_First and foremost, you need to have R and RStudio installed. If you do not have these things installed, please Google how to do this. In addition, you will need to install poppler utils. You can Google "pdftotext" to find a file from which to download._
+**First and foremost, you need to have R and RStudio installed. If you do not have these things installed, please Google how to do this. In addition, you will need to install poppler utils. You can Google "pdftotext" to find a file from which to download.**
 
 Using this tool is very straightforward, you simply need to call the `parseWireData()` function and pass it three arguments: `file`, `bank`, and `format`. The `file` argument tells R which file you'd like to parse, `bank` indicates the bank from which the file came, and `format` indicates the file type (i.e., xlsx, pdf, or csv). Once the app is finished parsing the file, a `data.frame` object is returned with the relevant information from the document. In the future, I'll be looking to add a spreadsheet with every known bank geocoded, both national and international. This will allow the app to automatically geolocate any and all banks involved, which will allow the analyst to map the flow of funds.
 
