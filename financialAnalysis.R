@@ -86,15 +86,30 @@ parseBOA <- function(file) {
       } else {
         iBank <- NA
       }
+      oAcctNum <- str_extract(textBlock[OIDX - 1], "(?<=ORIG\\s?:\\s?/\\s?)[A-Z0-9]+")
+      BANIDX <- grep("BNF:", textBlock)
+      bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF\\s?:\\s?/\\s?)[A-Z0-9]+")
     }
 
-    return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig, "originatingBank"=oBank,
-             "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "Beneficiary"=bnf, "Memo"=memo))
+    return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
+             "originatorAcctNum"=oAcctNum, "originatorBank"=oBank,
+             "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+             "Beneficiary"=bnf, "Memo"=memo))
   }))
   return(dat)
 }
 
 parseBNYMellon <- function(file) {
+  dat <- NULL
+  temp <- read_excel(file, col_names=F)
+  txt <- temp$X0
+  SIDX <- grep("PAYMT\\s+TRN\\s+[A-Z0-9]{16}", txt)
+  FIDX <- c(tail(SIDX, -1) - 1, length(txt))
+  dat <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+    s <- SIDX[idx]
+    f <- FIDX[idx]
+    textBlock <- txt[s:f]
+
 
 }
 
