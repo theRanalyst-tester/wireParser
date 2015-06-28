@@ -42,7 +42,7 @@ parseBOA <- function(file) {
     cur <- ifelse(cur == "USO", "USD", cur)
     MIDX <- grep("ORIG TO BNF INFO:", textBlock, ignore.case=T)[1] + 1
     memo <- textBlock[MIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-      gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
 
     #BoA Wires have a different format depending on whether a customer received a wire or sent one.
     #If a BoA customer *sends* a wire, it will say "**** CREDIT PAYMENT MESSAGE TEXT ****" on the wire.
@@ -52,37 +52,42 @@ parseBOA <- function(file) {
       messageBlock <- textBlock[s:f]
 
       OBIDX <- grep("Sending Bank:", messageBlock, ignore.case=T)[1] + 3
-      oBank <- messageBlock[OBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-        gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oBank <- messageBlock[OBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
+        str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       BBIDX <- grep("Receiving Bank:", messageBlock, ignore.case=T)[1] + 3
-      bBank <- messageBlock[BBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-        gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bBank <- messageBlock[BBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
+        str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       if (any(grepl("Beneficiary's Bank", messageBlock, ignore.case=T))) {
         iBank <- bBank
         BBIDX <- grep("Beneficiary's Bank", messageBlock, ignore.case=T)[1] + 1
-        bBank <- messageBlock[BBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bBank <- messageBlock[BBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
+          gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       } else {
         iBank <- NA
       }
       BIDX <- grep("Beneficiary:", messageBlock, ignore.case=T)[1] + 1
-      bnf <- messageBlock[BIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- messageBlock[BIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       OIDX <- grep("Originator:", messageBlock, ignore.case=T) + 1
-      orig <- messageBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      orig <- messageBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     } else {
       bBank <- "Bank of America"
       OBIDX <- grep("DEBIT VAL:\\s?../../..", textBlock, ignore.case=T)[1] + 1
       bnf <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-        gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       OIDX <- grep("ORIG:\\s*/\\s*[A-Z0-9]+", textBlock, ignore.case=T)[1] + 1
       orig <- textBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
-        gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       oBank <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
-        gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       if (any(grepl("ORDERING BNK:", textBlock, ignore.case=T))) {
         iBank <- oBank
         OBIDX <- grep("ORDERING BNK:", textBlock, ignore.case=T)[1] + 1
         oBank <- textBlock[OBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-          gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+          gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       } else {
         iBank <- NA
       }
@@ -145,9 +150,18 @@ parseCapOne <- function(file) {
     TIDX <- grep("^Time", textBlock, ignore.case=T)
     time <- str_extract(textBlock[TIDX], "..:..:..$")
     MIDX <- grep("^OBI\\s+", textBlock)[1]
-    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-Za-z]+\\s?([A-Za-z]+)?")
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-z]+\\s?([A-z]+)?")
     BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
-    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10})[A-Za-z]+\\s?([A-Za-z]+)?")
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10})[A-z]+\\s?([A-z]+)?") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    BBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
+    bBank <- str_extract(textBlock[BBIDX], "(?<=Recv Name\\s{1,10})[A-z]+\\s?([A-z]+)?") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    BANIDX <- grep("^BNF ID", textBlock)[1]
+    bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10})[A-z0-9]+")
+    IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
+    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10})[A-z]+\\s?([A-z]+)?") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
   }))
 }
 
