@@ -181,19 +181,26 @@ parseCapOne <- function(file) {
   return(dat)
 }
 
-parseWireData <- function(file, bank, format) {
+parseCitibank <- function(file, n) {
+  tmp <- read_excel(file, skip=n)
+
+parseWireData <- function(file, bank, format, skip=0) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
   if (tolower(bank) == "bank of america") {
     if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
-    parseBOA(file)
+    return(parseBOA(file))
   }
   if (tolower(bank) == "bnymellon") {
     if (tolower(format) != "xlsx") stop("BNY Mellon typically sends XLSX files. Are you sure this is the right format?")
-    parseBNY(file)
+    return(parseBNY(file))
   }
   if (tolower(bank) == "capital one") {
     if (tolower(format) != "pdf") stop("Capital One typically sends PDF files. Are you sure this is the right format?")
-    parseCapOne(file)
+    return(parseCapOne(file))
+  }
+  if (tolower(bank) == "citibank") {
+    if (!(tolower(format) %in% c("xls", "xlsx"))) stop("Citibank typically sends both a Word document and an Excel document. The Excel document is preferred for this tool, so please use that file.")
+    return(parseCitibank(file, n=skip))
   }
 }
 
