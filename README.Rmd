@@ -10,4 +10,4 @@ One thing to keep in mind when using the tool: any bank that sends an Excel file
 
 #### Shortcomings
 
-Currently the app can only handle Bank of America PDF files. I'm currently working on BNY Mellon, and as bank functionality is added, the files here will be updated. If you have any issues, please be sure to issue them [here]('https://github.com/theRanalyst/phoneRecords/issues').
+Currently the app can only handle Bank of America PDF files. I'm currently working on BNY Mellon, and as bank functionality is added, the files here will be updated. If you have any issues, please be sure to issue them [here](https://github.com/theRanalyst/phoneRecords/issues).

@@ -32,14 +32,14 @@ parseBOA <- function(file) {
     amount <- str_extract(textBlock[AIDX], "(?<=AMT:\\s{0,3})[\\s0-9.,l]+") %>%
       str_replace_all("[\\s,]", "")
     #common OCR mistake is to confuse a "1" with an "l", so replace it
-    amount %<>% gsub("l", "1", .)
+    amount %<>% str_replace_all("l", "1", .)
     errorFlag <- as.numeric(amount) %>% is.na()
     if (errorFlag) {
       amount <- readline(prompt=paste(amount, "appears to be non-numeric. What should the value be? "))
     }
     cur <- str_extract(textBlock[AIDX], "(?<=CUR:\\s{0,3})[\\S]+")
     #common OCR mistake is confusing "USD" with "USO", so replace that
-    cur[cur == "USO"] <- "USD"
+    cur <- ifelse(cur == "USO", "USD", cur)
     MIDX <- grep("ORIG TO BNF INFO:", textBlock, ignore.case=T)[1] + 1
     memo <- textBlock[MIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
       gsub("([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
@@ -119,6 +119,7 @@ parseCapOne <- function(file) {
   system(cmd)
   txtFile <- file %>% file_path_sans_ext() %>% paste(., '.txt', sep='')
   txt <- read_lines(txtFile)
+  txt %<>% str_replace_all("^\\s+|\\s+$", "")
 
   SIDX <- grep("MIF_AMOUNT", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
@@ -127,8 +128,28 @@ parseCapOne <- function(file) {
     f <- FIDX[idx]
     textBlock <- txt[s:f]
 
-
+    DIDX <- grep("^Wire Date", textBlock, ignore.case=T)
+    date <- str_extract(textBlock[DIDX], "../../....")
+    AIDX <- grep("^Amount", textBlock, ignore.case=T)
+    amount <- str_extract(textBlock[AIDX], "[0-9,\\.l]+") %>% str_replace_all("[\\s,]", "")
+    #common OCR mistake is to confuse a "1" with an "l", so replace it
+    amount %<>% str_replace_all("l", "1", .)
+    errorFlag <- as.numeric(amount) %>% is.na()
+    if (errorFlag) {
+      amount <- readline(prompt=paste(amount, "appears to be non-numeric. What should the value be? "))
+    }
+    CIDX <- grep("^Currency", textBlock, ignore.case=T)
+    cur <- str_extract(textBlock[CIDX], "[A-Z]{3}$")
+    #common OCR mistake is confusing "USD" with "USO", so replace that
+    cur <- ifelse(cur == "USO", "USD", cur)
+    TIDX <- grep("^Time", textBlock, ignore.case=T)
+    time <- str_extract(textBlock[TIDX], "..:..:..$")
+    MIDX <- grep("^OBI\\s+", textBlock)[1]
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-Za-z]+\\s?([A-Za-z]+)?")
+    BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10})[A-Za-z]+\\s?([A-Za-z]+)?")
   }))
+}
 
 parseWireData <- function(file, bank, format) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
