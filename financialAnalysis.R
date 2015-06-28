@@ -184,6 +184,7 @@ parseCapOne <- function(file) {
 parseCitibank <- function(file, n) {
   tmp <- read_excel(file, skip=n)
 
+
 parseWireData <- function(file, bank, format, skip=0) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
   if (tolower(bank) == "bank of america") {
@@ -199,7 +200,7 @@ parseWireData <- function(file, bank, format, skip=0) {
     return(parseCapOne(file))
   }
   if (tolower(bank) == "citibank") {
-    if (!(tolower(format) %in% c("xls", "xlsx"))) stop("Citibank typically sends both a Word document and an Excel document. The Excel document is preferred for this tool, so please use that file.")
+    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("Citibank typically sends both a Word document and an Excel document. The Excel document is preferred for this tool, so please use that file.")
     return(parseCitibank(file, n=skip))
   }
 }
