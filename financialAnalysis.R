@@ -182,8 +182,56 @@ parseCapOne <- function(file) {
 }
 
 parseCitibank <- function(file, n) {
-  tmp <- read_excel(file, skip=n)
+  type = file_ext(file)
+  if (type %in% c("xls", "xlsx", "csv")) {
+    if (type == "csv") tmp <- read_csv(file, skip=n) else tmp <- read_excel(file, skip=n)
+    if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
+    defaultNames <- c("Global Id", "Instr Dt", "Originator", "Orig. Bank", "DB or INTER. Party",
+                      "Debited Party", "Credited Party", "CR or INTER. Party", "Bene. Bank",
+                      "Beneficiary", "Amount", "Orig Bene Info ")
+    if (!all(names(tmp) %in% defaultNames)) stop("This tool requires a specific set of variables for Citibank spreadsheets. Please see the documentation for this tool.")
+    names(tmp) <- c("globalID", "instructionDate", "originator", "originatorBank", "dbOrInterParty",
+                    "debitedParty", "creditedParty", "crOrInterParty", "beneficiaryBank", "beneficiary",
+                    "amount", "OBI")
+    tmp <- apply(tmp, 2, function(z) ifelse(z %in% c("()", " "), NA, z)) %>%
+      as.data.frame(stringsAsFactors=F)
+    tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
 
+    date <- tmp$instructionDate
+    amount <- tmp$amount
+    cur <- "USD"
+    time <- "00:00"
+    memo <- tmp$OBI
+    orig <- tmp$originator %>% str_replace("\\s+\\(.*\\)", "") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    oBank <- ifelse(is.na(tmp$originatorBank), "Citibank", tmp$originatorBank) %>%
+      str_replace("\\s+\\(.*\\)", "") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    oAcctNum <- str_extract(tmp$originator, "(?<=\\s{1,10})\\(.*\\)") %>%
+      str_replace_all("\\(|\\)", "")
+    bnf <- tmp$beneficiary %>% str_replace("\\s+\\(.*\\)", "") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    bBank <- ifelse(is.na(tmp$beneficiaryBank), "Citibank", tmp$beneficiaryBank) %>%
+      str_replace("\\s+\\(.*\\)", "") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    bAcctNum <- str_extract(tmp$beneficiary, "(?<=\\s{1,10})\\(.*\\)") %>%
+      str_replace_all("\\(|\\)", "")
+    #If both intermediary party fields are empty and Citibank isn't mentioned, then they
+    #are the intermediary bank. Otherwise, Citibank should be in either the originatingBank
+    #field or the beneficiaryBank field. The intermediate bank then will be whatever is in
+    #either of the intermediary party fields. If both intermediary party fields are populated
+    #then we need to figure out what to do.
+    iBank <- "placeholder"
+    dat <- data.frame("Date"=date, "Time"=time, "Amount"=amount, "Currency"=cur,
+                      "Originator"=orig, "originatorAcctNum"=oAcctNum,
+                      "originatorBank"=oBank, "intermediaryBank"=iBank,
+                      "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+                      "Beneficiary"=bnf, "Memo"=memo, stringsAsFactors=F)
+  } else {
+    txt <- read_lines(file)
+    txt %<>% str_replace_all("\\\t|\\s{2,}", " ") %>% str_replace("^\\s+|\\s+$", "")
+  }
+}
 
 parseWireData <- function(file, bank, format, skip=0) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
@@ -201,7 +249,7 @@ parseWireData <- function(file, bank, format, skip=0) {
   }
   if (tolower(bank) == "citibank") {
     if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("Citibank typically sends both a Word document and an Excel document. The Excel document is preferred for this tool, so please use that file.")
-    return(parseCitibank(file, n=skip))
+    return(parseCitibank(file, n=skip, type=format))
   }
 }
 

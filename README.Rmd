@@ -11,7 +11,7 @@ Once the app is finished parsing the file, a `data.frame` object is returned wit
 One thing to keep in mind when using the tool: any bank that sends an Excel file (xls or xlsx) will invariably add some formatting to their spreadsheets. This will included merged headers, colored cells, etc. The app will try its best to remove these formatting options, but it might be best if you remove them yourself.
 
 #### Important Note About Excel Files (xls and xlsx)
-Excel files can be a very tricky thing to work with due to how Excel handles data. Excel allows a workbook to have multiple worksheets, where each worksheet is, essentially, its own `data.frame`. This causes an issue because R wants to deal with one sheet at a time. The ideal way to handle this is to either move the sheet of interest to be the the first sheet in the workbook, or to save the sheet as a separate CSV file. The latter of the two is the preferred method. 
+Excel files can be a very tricky thing to work with due to how Excel handles data. Excel allows a workbook to have multiple worksheets, where each worksheet is, essentially, its own `data.frame`. This causes an issue because R wants to deal with one sheet at a time. The ideal way to handle this is to either move the sheet of interest to be the the first sheet in the workbook, or to save the sheet as a separate CSV file. The latter of the two is the preferred method.
 
 #### Shortcomings
 Currently the app can only handle Bank of America and Capital One PDF files. I'm currently working on other banks and as functionality is added the files here will be updated. If you have any issues, please be sure to issue them [here](https://github.com/theRanalyst/wireParser/issues).
