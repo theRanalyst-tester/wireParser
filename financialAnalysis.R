@@ -233,6 +233,31 @@ parseCitibank <- function(file, n) {
   }
 }
 
+parseHSBC <- function(file) {
+  type <- file_ext(file)
+  sheetName <- "Details"
+  if (type == "xls") {
+    if (!("Details" %in% .Call('readxl_xls_sheets', PACKAGE='readxl', file))) {
+      sheetName <- readline(prompt="In which sheet is the data located? ")
+    }
+  } else {
+    if (!("Details" %in% .Call('readxl_xlsx_sheets', PACKAGE='readxl', file))) {
+      sheetName <- readline(prompt="In which sheet is the data located? ")
+    }
+  }
+  tmp <- read_excel(file, sheet=sheetName)
+  names(tmp) %<>% gsub("_", " ", .) %>%
+    gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    gsub("\\s", "", .)
+  date <- tmp$TransactionDate
+  amount <- tmp$Amount
+  cur <- tmp$CcyCodeCurrency
+  time <- "00:00"
+  memo <- "Placeholder"
+
+}
+
+
 parseWireData <- function(file, bank, format, skip=0) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
   if (tolower(bank) == "bank of america") {
