@@ -166,7 +166,8 @@ parseCapOne <- function(file) {
     BANIDX <- grep("^BNF ID", textBlock)[1]
     bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10})[A-z0-9]+")
     BAIDX <- grep("^BNF ADDR", textBlock)[1]
-    bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ")
+    bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ") %>%
+      str_replace_all("BNF ADDR\\d", "")
     IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
     iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
@@ -179,7 +180,8 @@ parseCapOne <- function(file) {
     OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
     oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10})[A-z0-9]+")
     OAIDX <- grep("ORG ADDR", textBlock)[1]
-    oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ")
+    oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ") %>%
+      str_replace_all("ORG ADDR\\d", "")
     return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
              "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
              "originatorBank"=oBank, "intermediaryBank"=iBank,
