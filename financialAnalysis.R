@@ -219,6 +219,7 @@ parseCitibank <- function(file, n) {
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     oAcctNum <- str_extract(tmp$originator, "(?<=\\s{1,10})\\(.*\\)") %>%
       str_replace_all("\\(|\\)", "")
+    oAddr <- NA
     bnf <- tmp$beneficiary %>% str_replace("\\s+\\(.*\\)", "") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     bBank <- ifelse(is.na(tmp$beneficiaryBank), "Citibank", tmp$beneficiaryBank) %>%
@@ -226,6 +227,7 @@ parseCitibank <- function(file, n) {
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     bAcctNum <- str_extract(tmp$beneficiary, "(?<=\\s{1,10})\\(.*\\)") %>%
       str_replace_all("\\(|\\)", "")
+    bAddr <- NA
     #If both intermediary party fields are empty and Citibank isn't mentioned, then they
     #are the intermediary bank. Otherwise, Citibank should be in either the originatingBank
     #field or the beneficiaryBank field. The intermediate bank then will be whatever is in
@@ -233,10 +235,12 @@ parseCitibank <- function(file, n) {
     #then we need to figure out what to do.
     iBank <- "placeholder"
     dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
-                      "Originator"=orig, "originatorAcctNum"=oAcctNum,
+                      "Originator"=orig, "originatorAddress"=oAddr,
+                      "originatorAcctNum"=oAcctNum,
                       "originatorBank"=oBank, "intermediaryBank"=iBank,
                       "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
-                      "Beneficiary"=bnf, "Memo"=memo, stringsAsFactors=F)
+                      "beneficiaryAddress"=bAddr, "Beneficiary"=bnf,
+                      "Memo"=memo, stringsAsFactors=F)
   } else {
     txt <- read_lines(file)
     txt %<>% str_replace_all("\\\t|\\s{2,}", " ") %>% str_replace("^\\s+|\\s+$", "")
