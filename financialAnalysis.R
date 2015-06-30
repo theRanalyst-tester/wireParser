@@ -25,7 +25,7 @@ parseBOA <- function(file) {
     amount <- str_extract(textBlock[AIDX], "(?<=AMT:\\s{0,3})[\\s0-9.,l]+") %>%
       str_replace_all("[\\s,]", "")
     #common OCR mistake is to confuse a "1" with an "l", so replace it
-    amount %<>% str_replace_all("l", "1", .)
+    amount %<>% str_replace_all("l", "1")
     errorFlag <- as.numeric(amount) %>% is.na()
     if (errorFlag) {
       amount <- readline(prompt=paste(amount, "appears to be non-numeric. What should the value be? "))
@@ -100,9 +100,10 @@ parseBOA <- function(file) {
     }
 
     return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
-             "originatorAcctNum"=oAcctNum, "originatorBank"=oBank,
-             "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
-             "Beneficiary"=bnf, "Memo"=memo))
+             "originatorAcctNum"=oAcctNum, "originatorAddress"=oAddr,
+             "originatorBank"=oBank, "intermediaryBank"=iBank,
+             "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+             "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
   dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
   return(dat)
