@@ -102,7 +102,7 @@ parseBOA <- function(file) {
     }
 
     return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
-             "originatorAcctNum"=oAcctNum, "originatorAddress"=oAddr,
+             "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
              "originatorBank"=oBank, "intermediaryBank"=iBank,
              "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
              "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
@@ -165,6 +165,8 @@ parseCapOne <- function(file) {
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     BANIDX <- grep("^BNF ID", textBlock)[1]
     bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10})[A-z0-9]+")
+    BAIDX <- grep("^BNF ADDR", textBlock)[1]
+    bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ")
     IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
     iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
@@ -176,11 +178,13 @@ parseCapOne <- function(file) {
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
     oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10})[A-z0-9]+")
-
+    OAIDX <- grep("ORG ADDR", textBlock)[1]
+    oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ")
     return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
-             "originatorAcctNum"=oAcctNum, "originatorBank"=oBank,
-             "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
-             "Beneficiary"=bnf, "Memo"=memo))
+             "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+             "originatorBank"=oBank, "intermediaryBank"=iBank,
+             "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+             "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
   dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
   return(dat)
