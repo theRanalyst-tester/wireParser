@@ -71,9 +71,19 @@ parseBOA <- function(file) {
       OBIDX <- grep("DEBIT VAL:\\s?../../..", textBlock, ignore.case=T)[1] + 1
       bnf <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
         gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAddr <- textBlock[(OBIDX+1):(OBIDX+2)] %>% str_split(., "\\s{3,}") %>%
+        unlist() %>% .[c(2, 4)] %>% paste(., collapse=" ")
       OIDX <- grep("ORIG:\\s*/\\s*[A-Z0-9]+", textBlock, ignore.case=T)[1] + 1
-      orig <- textBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>% str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
+      orig <- textBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
+        str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
         gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAddr <- textBlock[(OIDX+1):(OIDX+2)] %>%
+        str_split(., "\\s{3,}") %>% unlist()
+      if (length(oAddr) > 2) {
+        oAddr %<>% .[c(1, 3)] %>% paste(., collapse=" ")
+      } else {
+        oAddr %<>% paste(., collapse=" ")
+      }
       oBank <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
         gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       if (any(grepl("ORDERING BNK:", textBlock, ignore.case=T))) {
