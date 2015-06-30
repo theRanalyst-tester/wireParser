@@ -245,7 +245,7 @@ parseHSBC <- function(file) {
       sheetName <- readline(prompt="In which sheet is the data located? ")
     }
   }
-  tmp <- read_excel(file, sheet=sheetName)
+  tmp <- read_excel(file, sheet=sheetName) %>% filter(rowSums(is.na(.)) != ncol(.))
   names(tmp) %<>% gsub("_", " ", .) %>%
     gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
     gsub("\\s", "", .)
@@ -254,7 +254,32 @@ parseHSBC <- function(file) {
   cur <- tmp$CcyCodeCurrency
   time <- "00:00"
   memo <- "Placeholder"
-
+  oBank <- tmp$DebitParty
+  orig <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
+    unlist() %>% unname()
+  oAcctNum <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][1]) %>%
+    unlist() %>% unname()
+  oAddr <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]] %>% .[3:length(.)]) %>%
+    unname()
+  oAddr <- sapply(oAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
+    unlist() %>% unname()
+  bBank <- tmp$CreditParty
+  bnf <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
+    unlist() %>% unname()
+  bAcctNum <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]][1]) %>%
+    unlist() %>% unname()
+  bAddr <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]] %>% .[3:length(.)]) %>%
+    unname()
+  bArrd <- sapply(bAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
+    unlist() %>% unname()
+  iBank <- "Placeholder"
+  dat <- data.frame("Date"=date, "Time"=time, "Amount"=amount, "Currency"=cur,
+                    "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+                    "originatorBank"=oBank, "intermediaryBank"=iBank,
+                    "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+                    "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
+                    stringsAsFactors=F))
+  return(dat)
 }
 
 
@@ -275,6 +300,10 @@ parseWireData <- function(file, bank, format, skip=0) {
   if (tolower(bank) == "citibank") {
     if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("Citibank typically sends both a Word document and an Excel document. The Excel document is preferred for this tool, so please use that file.")
     return(parseCitibank(file, n=skip, type=format))
+  }
+  if (tolower(bank) == "hsbc") {
+    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("HSBC typically sends an Excel file. Are you sure this is the right format?")
+    return(parseHSBC(file))
   }
 }
 
