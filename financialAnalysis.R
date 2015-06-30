@@ -3,13 +3,6 @@ library(tools)
 library(dplyr)
 library(magrittr)
 library(stringr)
-library(XML)
-library(zoo)
-library(maps)
-library(geosphere)
-library(sna)
-library(network)
-library(RColorBrewer)
 
 parseBOA <- function(file) {
   dat_m <- NULL
