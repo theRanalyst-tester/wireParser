@@ -148,7 +148,6 @@ parseCapOne <- function(file) {
     #common OCR mistake is confusing "USD" with "USO", so replace that
     cur <- ifelse(cur == "USO", "USD", cur)
     TIDX <- grep("^Time", textBlock, ignore.case=T)
-    time <- str_extract(textBlock[TIDX], "..:..:..$")
     MIDX <- grep("^OBI\\s+", textBlock)[1]
     memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
@@ -172,7 +171,7 @@ parseCapOne <- function(file) {
     OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
     oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10})[A-z0-9]+")
 
-    return(c("Date"=date, "Time"=time, "Amount"=amount, "Currency"=cur, "Originator"=orig,
+    return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
              "originatorAcctNum"=oAcctNum, "originatorBank"=oBank,
              "intermediaryBank"=iBank, "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
              "Beneficiary"=bnf, "Memo"=memo))
@@ -200,7 +199,6 @@ parseCitibank <- function(file, n) {
     date <- tmp$instructionDate
     amount <- tmp$amount
     cur <- "USD"
-    time <- "00:00"
     memo <- tmp$OBI
     orig <- tmp$originator %>% str_replace("\\s+\\(.*\\)", "") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
@@ -222,7 +220,7 @@ parseCitibank <- function(file, n) {
     #either of the intermediary party fields. If both intermediary party fields are populated
     #then we need to figure out what to do.
     iBank <- "placeholder"
-    dat <- data.frame("Date"=date, "Time"=time, "Amount"=amount, "Currency"=cur,
+    dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                       "Originator"=orig, "originatorAcctNum"=oAcctNum,
                       "originatorBank"=oBank, "intermediaryBank"=iBank,
                       "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
@@ -252,8 +250,7 @@ parseHSBC <- function(file) {
   date <- tmp$TransactionDate
   amount <- tmp$Amount
   cur <- tmp$CcyCodeCurrency
-  time <- "00:00"
-  memo <- "Placeholder"
+  memo <- NA
   oBank <- tmp$DebitParty
   orig <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
     unlist() %>% unname()
@@ -270,15 +267,15 @@ parseHSBC <- function(file) {
     unlist() %>% unname()
   bAddr <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]] %>% .[3:length(.)]) %>%
     unname()
-  bArrd <- sapply(bAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
+  bAddr <- sapply(bAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
     unlist() %>% unname()
   iBank <- "Placeholder"
-  dat <- data.frame("Date"=date, "Time"=time, "Amount"=amount, "Currency"=cur,
+  dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                     "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
                     "originatorBank"=oBank, "intermediaryBank"=iBank,
                     "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
                     "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
-                    stringsAsFactors=F))
+                    stringsAsFactors=F)
   return(dat)
 }
 
