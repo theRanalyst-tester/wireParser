@@ -63,9 +63,11 @@ parseBOA <- function(file) {
       BIDX <- grep("Beneficiary:", messageBlock, ignore.case=T)[1] + 1
       bnf <- messageBlock[BIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
         gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAddr <- textBlock[(BIDX+1):(BIDX+2)] %>% paste(., collapse=" ")
       OIDX <- grep("Originator:", messageBlock, ignore.case=T) + 1
       orig <- messageBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
         gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAddr <- textBlock[(OIDX+1):(OIDX+2)] %>% paste(., collapse=" ")
     } else {
       bBank <- "Bank of America"
       OBIDX <- grep("DEBIT VAL:\\s?../../..", textBlock, ignore.case=T)[1] + 1
