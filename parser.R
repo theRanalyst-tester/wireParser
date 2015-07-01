@@ -296,7 +296,7 @@ parseHSBC <- function(file) {
 }
 
 
-parseWireData <- function(file, bank, format, skip=0) {
+parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
   if (tolower(bank) == "bank of america") {
     if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
