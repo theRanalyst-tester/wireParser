@@ -1,8 +1,10 @@
 library(readr)
+library(readxl)
 library(tools)
 library(dplyr)
 library(magrittr)
 library(stringr)
+library(stringdist)
 
 parseBOA <- function(file) {
   dat_m <- NULL
@@ -192,8 +194,8 @@ parseCapOne <- function(file) {
   return(dat)
 }
 
-parseCitibank <- function(file, n) {
-  type = file_ext(file)
+parseCitibank <- function(file, n=1) {
+  type = file_ext(file) %>% tolower()
   if (type %in% c("xls", "xlsx", "csv")) {
     if (type == "csv") tmp <- read_csv(file, skip=n) else tmp <- read_excel(file, skip=n)
     if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
@@ -208,32 +210,120 @@ parseCitibank <- function(file, n) {
       as.data.frame(stringsAsFactors=F)
     tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
 
+    #common data
     date <- tmp$instructionDate
     amount <- tmp$amount
     cur <- "USD"
     memo <- tmp$OBI
+
+    #originator/beneficiary info
     orig <- tmp$originator %>% str_replace("\\s+\\(.*\\)", "") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    oBank <- ifelse(is.na(tmp$originatorBank), "Citibank", tmp$originatorBank) %>%
-      str_replace("\\s+\\(.*\\)", "") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    oAddr <- NA
     oAcctNum <- str_extract(tmp$originator, "(?<=\\s{1,10})\\(.*\\)") %>%
       str_replace_all("\\(|\\)", "")
-    oAddr <- NA
     bnf <- tmp$beneficiary %>% str_replace("\\s+\\(.*\\)", "") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    bBank <- ifelse(is.na(tmp$beneficiaryBank), "Citibank", tmp$beneficiaryBank) %>%
-      str_replace("\\s+\\(.*\\)", "") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    bAddr <- NA
     bAcctNum <- str_extract(tmp$beneficiary, "(?<=\\s{1,10})\\(.*\\)") %>%
       str_replace_all("\\(|\\)", "")
-    bAddr <- NA
-    #If both intermediary party fields are empty and Citibank isn't mentioned, then they
-    #are the intermediary bank. Otherwise, Citibank should be in either the originatingBank
-    #field or the beneficiaryBank field. The intermediate bank then will be whatever is in
-    #either of the intermediary party fields. If both intermediary party fields are populated
-    #then we need to figure out what to do.
-    iBank <- "placeholder"
+
+    #bank info
+    oBank <- apply(tmp, 1, function(row) {
+      if (is.na(row['originatorBank'])) {
+        oBank <- "Citibank"
+      } else {
+        oBankValues <- row['originatorBank'] %>% str_split("\\(") %>%
+          .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
+        swiftFlag <- oBankValues[1] == oBankValues[2]
+        if (swiftFlag) oBank <- row['dbOrInterParty'] else oBank <- row['originatorBank']
+      }
+      oBank
+    })
+    oBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
+      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+      str_replace_all("^\\s+|\\s+$", "")
+
+    bBank <- apply(tmp, 1, function(row) {
+      if (is.na(row['beneficiaryBank'])) {
+        bBank <- "Citibank"
+      } else {
+        bBankValues <- row['beneficiaryBank'] %>% str_split("\\(") %>%
+          .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
+        swiftFlag <- bBankValues[1] == bBankValues[2]
+        if (swiftFlag) bBank <- row['crOrInterParty'] else bBank <- row['beneficiaryBank']
+      }
+      bBank
+    })
+    bBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
+      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+      str_replace_all("^\\s+|\\s+$", "")
+
+    #Account for when DB/CR or Inter Party is different from the Orig/Benef Bank
+    #and the Orig/Benef bank is not a SWIFT code
+    dbi <- apply(tmp, 1, function(row) {
+      if (!is.na(row['dbOrInterParty'])) {
+        dbiValue <- row['dbOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
+          str_replace_all("^\\s+|\\s+$", "")
+        origBankValue <- row['originatorBank'] %>% str_replace_all("\\(.*\\)", "") %>%
+          str_replace_all("^\\s+|\\s+$", "")
+        if (stringdist(dbiValue, origBankValue)/nchar(dbiValue) > 1/3) {
+          oBankValues <- row['originatorBank'] %>% str_split("\\(") %>%
+            .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
+          swiftFlag <- oBankValues[1] == oBankValues[2]
+          if (!swiftFlag) iBank <- dbiValue else iBank <- NA
+        } else {
+          iBank <- NA
+        }
+      } else {
+        iBank <- NA
+      }
+      iBank
+    })
+    dbi %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+    cri <- apply(tmp, 1, function(row) {
+      if (!is.na(row['crOrInterParty'])) {
+        criValue <- row['crOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
+          str_replace_all("^\\s+|\\s+$", "")
+        beneBankValue <- row['beneficiaryBank'] %>% str_replace_all("\\(.*\\)", "") %>%
+          str_replace_all("^\\s+|\\s+$", "")
+        if (stringdist(criValue, beneBankValue)/nchar(criValue) > 1/3) {
+          bBankValues <- row['beneficiaryBank'] %>% str_split("\\(") %>%
+            .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
+          swiftFlag <- bBankValues[1] == bBankValues[2]
+          if (!swiftFlag) iBank <- criValue else iBank <- NA
+        } else {
+          iBank <- NA
+        }
+      } else {
+        iBank <- NA
+      }
+      iBank
+    })
+    cri %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+    dbiFlag <- !is.na(dbi)
+    criFlag <- !is.na(cri)
+    iBank <- ifelse(dbiFlag & criFlag, "Need to reconcile", ifelse(dbiFlag, dbi, cri))
+
+    #Check if Citibank is any of the 2-3 banks we've established, and if not
+    #then set it as an intermediate bank
+
+    bBankFlag <- grepl("Citi\\s?bank", bBank, ignore.case=T)
+    oBankFlag <- grepl("Citi\\s?bank", oBank, ignore.case=T)
+    iBankFlag <- grepl("Citi\\s?bank", iBank, ignore.case=T)
+    iBankNA <- is.na(iBank)
+    iBank <- sapply(1:length(iBankFlag), function(idx) {
+      if (!any(bBankFlag[idx], oBankFlag[idx], iBankFlag[idx])) {
+        if (iBankNA[idx]) val <- "Citibank" else val <- paste(iBank[idx], "Citibank", sep=", ")
+      } else {
+        val <- iBank[idx]
+      }
+      val
+    })
+
+    #For now, I'm going to ignore the Debited Party and Credited Party fields
+    #as I think they're useless
+
     dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                       "Originator"=orig, "originatorAddress"=oAddr,
                       "originatorAcctNum"=oAcctNum,
@@ -295,6 +385,27 @@ parseHSBC <- function(file) {
   return(dat)
 }
 
+parseJPMC <- function(file) {
+  type = file_ext(file) %>% tolower()
+  if (type == "xls") sheetNames <- .Call("read_xls_sheets", PACKAGE="readxl", file)
+  if (type == "xlsx") sheetNames <- .Call("read_xlsx_sheets", PACKAGE="readxl", file)
+  for (sheetName in sheetNames) {
+    tmp <- read_excel(file, sheet=sheetName)
+    names(tmp) %<>% str_replace_all("_", " ") %>%
+      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+      str_replace_all(" ", "")
+    date <- tmp$PaymentDate
+    amount <- tmp$Amount %>% str_replace_all("[\\$,]", "")
+    amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
+    cur <- ifelse(grepl("\\$", tmp$Amount), "USD", "Other")
+    memo <- paste(tmp$DetPymt1, tmp$DetPymt2, tmp$DetPymt3, tmp$DetPymt4, collapse=" ")
+    orig <- tmp$OrdCust2
+    oAddr <- paste(tmp$OrdCust3, tmp$OrdCust4, collapse=" ")
+    oAcctNum <- tmp$OrdCust1
+    oBank <- tmp$DrAddr1
+    bnf
+  }
+}
 
 parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
@@ -302,7 +413,7 @@ parseWireData <- function(file, bank, format, skip=0, password=NULL) {
     if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
     return(parseBOA(file))
   }
-  if (tolower(bank) == "bnymellon") {
+  if (tolower(bank) %in% c("bny mellon", "bnymellon")) {
     if (tolower(format) != "xlsx") stop("BNY Mellon typically sends XLSX files. Are you sure this is the right format?")
     return(parseBNY(file))
   }
@@ -317,6 +428,10 @@ parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   if (tolower(bank) == "hsbc") {
     if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("HSBC typically sends an Excel file. Are you sure this is the right format?")
     return(parseHSBC(file))
+  }
+  if (tolower(bank) %in% c("jpmc", "jpmorgan chase", "jp morgan chase", "jpmorganchase")) {
+    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("JPMC typically sends an Excel file. Are you sure this is the right format?")
+    return(parseJPMC(file))
   }
 }
 
