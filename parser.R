@@ -6,6 +6,9 @@ library(magrittr)
 library(stringr)
 library(stringdist)
 
+#Ensure that large amounts of money are not recorded in scientific notation
+options(scipen=999)
+
 parseBOA <- function(file) {
   dat_m <- NULL
   cmd <- paste('pdftotext -layout "', file, '"', sep='')
@@ -184,6 +187,7 @@ parseCapOne <- function(file) {
     OAIDX <- grep("ORG ADDR", textBlock)[1]
     oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ") %>%
       str_replace_all("ORG ADDR\\d", "")
+
     return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
              "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
              "originatorBank"=oBank, "intermediaryBank"=iBank,
@@ -264,9 +268,11 @@ parseCitibank <- function(file, n=1) {
     dbi <- apply(tmp, 1, function(row) {
       if (!is.na(row['dbOrInterParty'])) {
         dbiValue <- row['dbOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
-          str_replace_all("^\\s+|\\s+$", "")
+          str_replace_all("^\\s+|\\s+$", "") %>% towlower()
+        if (is.na(dbiValue)) dbiValue <- ""
         origBankValue <- row['originatorBank'] %>% str_replace_all("\\(.*\\)", "") %>%
-          str_replace_all("^\\s+|\\s+$", "")
+          str_replace_all("^\\s+|\\s+$", "") %>% tolower()
+        if (is.na(origBankValue)) origBankValue <- ""
         if (stringdist(dbiValue, origBankValue)/nchar(dbiValue) > 1/3) {
           oBankValues <- row['originatorBank'] %>% str_split("\\(") %>%
             .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
@@ -320,7 +326,6 @@ parseCitibank <- function(file, n=1) {
       }
       val
     })
-
     #For now, I'm going to ignore the Debited Party and Credited Party fields
     #as I think they're useless
 
@@ -350,14 +355,34 @@ parseHSBC <- function(file) {
     }
   }
   tmp <- read_excel(file, sheet=sheetName) %>% filter(rowSums(is.na(.)) != ncol(.))
-  names(tmp) %<>% gsub("_", " ", .) %>%
+  names(tmp) %<>% str_replace_all("_", " ") %>%
     gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    gsub("\\s", "", .)
-  date <- tmp$TransactionDate
+    str_replace_all(" ", "")
+
+  #common data
+  date <- tmp$TransactionDate %>% as.Date(format="%m/%d/%Y")
   amount <- tmp$Amount
+  amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
   cur <- tmp$CcyCodeCurrency
-  memo <- NA
-  oBank <- tmp$DebitParty
+  memo <- apply(tmp, 1, function(row) {
+    if (is.na(row['SenderBankCorresp'])) {
+      if (is.na(row['ReceiverBankCorresp'])) {
+        val <- NA
+      } else {
+        val <- paste("Recieving Bank:", row['ReceiverBankCorresp'])
+      }
+    } else {
+      if (is.na(row['RecieverBankCorresp'])) {
+        val <- paste("Sending Bank:", row['SenderBankCorresp'])
+      } else {
+        val <- paste("Sending Bank:", row['SenderBankCorresp'],
+                     "Recieving Bank:", row['ReceiverBankCorresp'])
+      }
+    }
+    val
+  })
+
+  #originator/beneficiary info
   orig <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
     unlist() %>% unname()
   oAcctNum <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][1]) %>%
@@ -366,7 +391,6 @@ parseHSBC <- function(file) {
     unname()
   oAddr <- sapply(oAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
     unlist() %>% unname()
-  bBank <- tmp$CreditParty
   bnf <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
     unlist() %>% unname()
   bAcctNum <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]][1]) %>%
@@ -375,7 +399,53 @@ parseHSBC <- function(file) {
     unname()
   bAddr <- sapply(bAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
     unlist() %>% unname()
-  iBank <- "Placeholder"
+
+  #bank info
+  oBank <- apply(tmp, 1, function(row) {
+    oBank <- row['OriginatorBank'] %>% str_split("\\s{2,}") %>% .[[1]] %>% .[2]
+  })
+  oBank %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_replace_all("^\\s+|\\s+$", "")
+  #BeneficiaryBank is always empty, so set it to Credit Party for now.
+  #Checks will be made later to determine if this is correct.
+  bBank <- apply(tmp, 1, function(row) {
+    bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+  })
+
+  #Analyze the Debit Party field to determine if it's different from the Originator Bank
+  dpi <- apply(tmp, 1, function(row) {
+    if (is.na(row['DebitParty'])) {
+      iBank <- NA
+    } else {
+      dpiValue <- row['DebitParty'] %>% tolower()
+      origBankValue <- row['OriginatorBank'] %>% str_split("\\s{2,}") %>%
+        .[[1]] %>% .[2] %>% tolower()
+      if (is.na(origBankValue)) origBankValue <- ""
+      #Sometimes extra information makes it into the origBankValue, so use a grep
+      #to search for the entity. If it doesn't find it, use string distance.
+      #If Debit Party and Originator Bank match, then no Intermediate Bank yet.
+      if (grepl(dpiValue, origBankValue)) {
+        iBank <- NA
+      } else {
+        #If Debit Party and Originator Bank don't match, then set the Intermediate
+        #Bank to be the Debit Party field. Otherwise, it was a match and no iBank.
+        if ((stringdist(dpiValue, origBankValue)/nchar(dpiValue)) > 1/3) {
+          iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        } else {
+          iBank <- NA
+        }
+      }
+    }
+  })
+
+  #This would complete the transaction provided there is no *SeqB fields that are
+  #populated. Need to check for this variables and then incorporate some logic
+  #into picking and choosing beneficiaries and beneficiary banks.
+
+
+
+
+
   dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                     "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
                     "originatorBank"=oBank, "intermediaryBank"=iBank,
