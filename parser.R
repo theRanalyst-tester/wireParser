@@ -401,7 +401,7 @@ parseHSBC <- function(file) {
         unlist() %>% unname()
       bnf <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
         gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-      bAcctnum <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
+      bAcctNum <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
       bAddr <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
       bAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
         unlist() %>% unname()
@@ -507,15 +507,17 @@ parseHSBC <- function(file) {
     return(v)
   })
 
-  orig <- lapply(vars, function(elem) elem['Originator']) %>% unlist() %>% unname()
-  oAddr <- lapply(vars, function(elem) elem['originatorAddress']) %>% unlist() %>% unname()
-  oAcctNum <- lapply(vars, function(elem) elem['originatorAcctNum']) %>% unlist() %>% unname()
-  oBank <- lapply(vars, function(elem) elem['originatorBank']) %>% unlist() %>% unname()
-  iBank <- lapply(vars, function(elem) elem['intermediateBank']) %>% unlist() %>% unname()
-  bBank <- lapply(vars, function(elem) elem['beneficiaryBank']) %>% unlist() %>% unname()
-  bAcctNum <- lapply(vars, function(elem) elem['beneficiaryAcctNum']) %>% unlist() %>% unname()
-  bAddr <- lapply(vars, function(elem) elem['beneficiaryAddress']) %>% unlist() %>% unname()
-  bnf <- lapply(vars, function(elem) elem['Beneficiary']) %>% unlist() %>% unname()
+  vars <- t(vars)
+
+  orig <- vars[, 1]
+  oAddr <- vars[, 2]
+  oAcctNum <- vars[, 3]
+  oBank <- vars[, 4]
+  iBank <- vars[, 5]
+  bBank <- vars[, 6]
+  bAcctNum <- vars[, 7]
+  bAddr <- vars[, 8]
+  bnf <- vars[, 9]
 
   dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                     "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
@@ -548,9 +550,13 @@ parseJPMC <- function(file) {
   }
 }
 
+parseUBS <- function(file, password=NULL) {
+  #placeholder
+}
+
 parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
-  if (tolower(bank) == "bank of america") {
+  if (tolower(bank) %in% c("boa", "bank of america")) {
     if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
     return(parseBOA(file))
   }
@@ -573,6 +579,10 @@ parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   if (tolower(bank) %in% c("jpmc", "jpmorgan chase", "jp morgan chase", "jpmorganchase")) {
     if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("JPMC typically sends an Excel file. Are you sure this is the right format?")
     return(parseJPMC(file))
+  }
+  if (tolower(bank) %in% c("ubs", "ubs ag", "ubsag")) {
+    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("UBS typically sends an Excel file. Are you sure this is the right format?")
+    return(parseUBS(file))
   }
 }
 
