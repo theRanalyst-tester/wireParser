@@ -382,69 +382,140 @@ parseHSBC <- function(file) {
     val
   })
 
-  #originator/beneficiary info
-  orig <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
-    unlist() %>% unname()
-  oAcctNum <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]][1]) %>%
-    unlist() %>% unname()
-  oAddr <- sapply(tmp$Originator, function(z) str_split(z, "\\s{3,}")[[1]] %>% .[3:length(.)]) %>%
-    unname()
-  oAddr <- sapply(oAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
-    unlist() %>% unname()
-  bnf <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]][2]) %>%
-    unlist() %>% unname()
-  bAcctNum <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]][1]) %>%
-    unlist() %>% unname()
-  bAddr <- sapply(tmp$Beneficiary, function(z) str_split(z, "\\s{3,}")[[1]] %>% .[3:length(.)]) %>%
-    unname()
-  bAddr <- sapply(bAddr, function(z) z[nchar(z) > 3] %>% paste(., collapse=" ")) %>%
-    unlist() %>% unname()
+  #If the Beneficiary listed is a bank, HSBC appends data in *Seqb fields.
+  #It's possible that the Originator is also listed as a bank, which, to the
+  #best of my knowledge, only occurs if the Beneficiary is a bank. This can be
+  #determined by comparing the Originator to the OriginatorSeqb field. Either
+  #way, I need to assign variables based on whether or not the Beneficiary is
+  #a bank. The returned value will be a list of named vectors that will need
+  #to be separated into individual variables.
+  vars <- apply(tmp, 1, function(row) {
+    #If there's no *Seqb variables, assign as usual
+    if (is.na(row['OriginatorSeqb'])) {
+      #originator/beneficiary info
+      orig <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAcctNum <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
+      oAddr <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
+      oAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
+        unlist() %>% unname()
+      bnf <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAcctnum <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
+      bAddr <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
+      bAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
+        unlist() %>% unname()
 
-  #bank info
-  oBank <- apply(tmp, 1, function(row) {
-    oBank <- row['OriginatorBank'] %>% str_split("\\s{2,}") %>% .[[1]] %>% .[2]
-  })
-  oBank %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("^\\s+|\\s+$", "")
-  #BeneficiaryBank is always empty, so set it to Credit Party for now.
-  #Checks will be made later to determine if this is correct.
-  bBank <- apply(tmp, 1, function(row) {
-    bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-  })
+      #bank info
+      oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2]
+      oBank %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
+      #BeneficiaryBank is always empty, so set it to Credit Party.
+      bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
 
-  #Analyze the Debit Party field to determine if it's different from the Originator Bank
-  dpi <- apply(tmp, 1, function(row) {
-    if (is.na(row['DebitParty'])) {
-      iBank <- NA
-    } else {
-      dpiValue <- row['DebitParty'] %>% tolower()
-      origBankValue <- row['OriginatorBank'] %>% str_split("\\s{2,}") %>%
-        .[[1]] %>% .[2] %>% tolower()
-      if (is.na(origBankValue)) origBankValue <- ""
-      #Sometimes extra information makes it into the origBankValue, so use a grep
-      #to search for the entity. If it doesn't find it, use string distance.
-      #If Debit Party and Originator Bank match, then no Intermediate Bank yet.
-      if (grepl(dpiValue, origBankValue)) {
+      #There are two possibilities for the intermediary bank in this instance:
+      # 1) Debit Party 2) None
+      dpValue <- row['DebitParty']
+      obValue <- row['OriginatorBank']
+      if (grepl(dpValue, obValue, fixed=T)) {
         iBank <- NA
       } else {
-        #If Debit Party and Originator Bank don't match, then set the Intermediate
-        #Bank to be the Debit Party field. Otherwise, it was a match and no iBank.
-        if ((stringdist(dpiValue, origBankValue)/nchar(dpiValue)) > 1/3) {
-          iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-        } else {
-          iBank <- NA
-        }
+        iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          str_replace_all("^\\s+|\\s$", "")
       }
+      v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+             "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
+             "beneficiaryAcctNum"=bAcctNum, "beneficiaryAddress"=bAddr, "Beneficiary"=bnf)
+
+    #Otherwise there are *Seqb variables, which means the Originator and/or the
+    #Beneficiary fields are banks and need to be reset to the actual entities.
+    } else {
+      #Check if Originator == OriginatorSeqb. If not, then the Originator is (presumably)
+      #a bank and should be reset to the actual entity.
+      if (row['Originator'] == row['OriginatorSeqb']) {
+        orig <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oAcctNum <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
+        oAddr <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
+        oAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
+          unlist() %>% unname()
+        oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          str_replace_all("^\\s+|\\s+$", "")
+        #There are four possibilities for the intermediary bank in this instance:
+        # 1) Credit Party 2) Debit Party 3) Both or 4) Neither
+        dpValue <- row['DebitParty']
+        cpValue <- row['CreditParty']
+        obValue <- row['OriginatorBank']
+        bbValue <- row['Beneficiary']
+        if (grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
+          iBank <- NA
+        } else if (grepl(dpValue, obValue, fixed=T) & !grepl(cpValue, bbValue, fixed=T)) {
+          iBank <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+            str_replace_all("^\\s+|\\s+$", "")
+        } else if (!grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
+          iBank <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+            str_replace_all("^\\s+|\\s+$", "")
+        } else {
+          iBank1 <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+            str_replace_all("^\\s+|\\s+$", "")
+          iBank2 <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+            str_replace_all("^\\s+|\\s+$", "")
+          iBank <- paste(iBank1, iBank2, sep=", ")
+        }
+      } else {
+        orig <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oAcctNum <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
+        oAddr <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
+        oAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
+          unlist() %>% unname()
+        #There are some instances in which the OriginatorSeqb field is a SWIFT code
+        #that doesn't match any of the banks listed, so that needs to be the Originator
+        #bank and the DebitParty and Originator need to be listed as intermediary banks.
+        dpCheck <- row['DebitParty']
+        origCheck <- row['Originator']
+        if (!is.na(row['OriginatorBankSeqb']) & grepl(dpCheck, origCheck, ignore.case=T)) {
+          oBank <- row['OriginatorBankSeqb']
+        } else {
+          oBank <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+            gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+            str_replace_all("^\\s+|\\s+$", "")
+        }
+        iBank <- row['DebitParty'] %>%
+          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          str_replace_all("^\\s+|\\s+$", "")
+      }
+      #Beneficiary Bank should be in the Beneficiary field and the Beneficiary should
+      #be in the BeneficiarySeqb field.
+      bnf <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
+      bAcctNum <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
+      bAddr <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
+      bAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
+        unlist() %>% unname()
+      bBank <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
+
+      v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+             "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
+             "beneficiaryAcctNum"=bAcctNum, "beneficiaryAddress"=bAddr, "Beneficiary"=bnf)
     }
+    return(v)
   })
 
-  #This would complete the transaction provided there is no *SeqB fields that are
-  #populated. Need to check for this variables and then incorporate some logic
-  #into picking and choosing beneficiaries and beneficiary banks.
-
-
-
-
+  orig <- lapply(vars, function(elem) elem['Originator']) %>% unlist() %>% unname()
+  oAddr <- lapply(vars, function(elem) elem['originatorAddress']) %>% unlist() %>% unname()
+  oAcctNum <- lapply(vars, function(elem) elem['originatorAcctNum']) %>% unlist() %>% unname()
+  oBank <- lapply(vars, function(elem) elem['originatorBank']) %>% unlist() %>% unname()
+  iBank <- lapply(vars, function(elem) elem['intermediateBank']) %>% unlist() %>% unname()
+  bBank <- lapply(vars, function(elem) elem['beneficiaryBank']) %>% unlist() %>% unname()
+  bAcctNum <- lapply(vars, function(elem) elem['beneficiaryAcctNum']) %>% unlist() %>% unname()
+  bAddr <- lapply(vars, function(elem) elem['beneficiaryAddress']) %>% unlist() %>% unname()
+  bnf <- lapply(vars, function(elem) elem['Beneficiary']) %>% unlist() %>% unname()
 
   dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                     "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
