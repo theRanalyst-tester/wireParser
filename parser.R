@@ -393,7 +393,7 @@ parseHSBC <- function(file) {
     #If there's no *Seqb variables, assign as usual
     if (is.na(row['OriginatorSeqb'])) {
       #originator/beneficiary info
-      origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{1,30})/(?=[A-Z]+)") %>% .[[1]]
+      origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
       orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
       oAcctNum <- origField[1]
       if (length(origField) >= 3) {
@@ -403,7 +403,7 @@ parseHSBC <- function(file) {
       } else {
         oAddr <- NA
       }
-      bnfField <- row['Beneficiary'] %>% str_split("\\s{3,}|(?<=\\d{1,30})/(?=[A-Z]+)") %>% .[[1]]
+      bnfField <- row['Beneficiary'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
       bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
       bAcctNum <- bnfField[1]
       if (length(bnfField) >= 3) {
@@ -447,7 +447,7 @@ parseHSBC <- function(file) {
       #Check if Originator == OriginatorSeqb. If not, then the Originator is (presumably)
       #a bank and should be reset to the actual entity.
       if (row['Originator'] == row['OriginatorSeqb']) {
-        origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{1,30})/(?=[A-Z]+)") %>% .[[1]]
+        origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
         orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
         oAcctNum <- origField[1]
         if (length(origField) >= 3) {
@@ -482,7 +482,7 @@ parseHSBC <- function(file) {
           iBank <- paste(iBank1, iBank2, sep=", ")
         }
       } else {
-        origField <- row['OriginatorSeqb'] %>% str_split("\\s{3,}|(?<=\\d{1,30})/(?=[A-Z]+)") %>% .[[1]]
+        origField <- row['OriginatorSeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
         orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
         oAcctNum <- origField[1]
         if (length(origField) >= 3) {
@@ -510,7 +510,7 @@ parseHSBC <- function(file) {
       }
       #Beneficiary Bank should be in the Beneficiary field and the Beneficiary should
       #be in the BeneficiarySeqb field.
-      bnfField <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}|(?<=\\d{1,30})/(?=[A-Z]+)") %>% .[[1]]
+      bnfField <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
       bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
       bAcctNum <- bnfField[1]
       if (length(bnfField) >= 3) {
