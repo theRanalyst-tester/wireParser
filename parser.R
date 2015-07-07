@@ -393,22 +393,35 @@ parseHSBC <- function(file) {
     #If there's no *Seqb variables, assign as usual
     if (is.na(row['OriginatorSeqb'])) {
       #originator/beneficiary info
-      orig <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-      oAcctNum <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
-      oAddr <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
-      oAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
-        unlist() %>% unname()
-      bnf <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-      bAcctNum <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
-      bAddr <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
-      bAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
-        unlist() %>% unname()
+      origField <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]]
+      orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAcctNum <- origField[1]
+      if (length(origField) >= 3) {
+        oAddr <- origField %>% .[3:length(.)] %>%
+          str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+          .[nchar(.)> 3] %>% paste(., collapse=" ")
+      } else {
+        oAddr <- NA
+      }
+      bnfField <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]]
+      bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAcctNum <- bnfField[1]
+      if (length(bnfField) >= 3) {
+        bAddr <- bnfField %>% .[3:length(.)] %>%
+          str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+          .[nchar(.)> 3] %>% paste(., collapse=" ")
+      } else {
+        bAddr <- NA
+      }
 
       #bank info
-      oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2]
-      oBank %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+      oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
+      #Sometimes only the SWIFT code is included in the Originator Bank field so
+      #oBank comes back as NA. In this case, set it as the SWIFT code and will replace later.
+      if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>% .[[1]] %>% .[1] %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
         str_replace_all("^\\s+|\\s+$", "")
       #BeneficiaryBank is always empty, so set it to Credit Party.
       bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
@@ -434,12 +447,16 @@ parseHSBC <- function(file) {
       #Check if Originator == OriginatorSeqb. If not, then the Originator is (presumably)
       #a bank and should be reset to the actual entity.
       if (row['Originator'] == row['OriginatorSeqb']) {
-        orig <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-        oAcctNum <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
-        oAddr <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
-        oAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
-          unlist() %>% unname()
+        origField <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]]
+        orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oAcctNum <- origField[1]
+        if (length(origField) >= 3) {
+          oAddr <- origField %>% .[3:length(.)] %>%
+            str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+            .[nchar(.)> 3] %>% paste(., collapse=" ")
+        } else {
+          oAddr <- NA
+        }
         oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
           gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
           str_replace_all("^\\s+|\\s+$", "")
@@ -465,12 +482,16 @@ parseHSBC <- function(file) {
           iBank <- paste(iBank1, iBank2, sep=", ")
         }
       } else {
-        orig <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-        oAcctNum <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
-        oAddr <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
-        oAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
-          unlist() %>% unname()
+        origField <- row['OriginatorSeqb'] %>% str_split("\\s{3,}") %>% .[[1]]
+        orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oAcctNum <- origField[1]
+        if (length(origField) >= 3) {
+          oAddr <- origField %>% .[3:length(.)] %>%
+            str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+            .[nchar(.)> 3] %>% paste(., collapse=" ")
+        } else {
+          oAddr <- NA
+        }
         #There are some instances in which the OriginatorSeqb field is a SWIFT code
         #that doesn't match any of the banks listed, so that needs to be the Originator
         #bank and the DebitParty and Originator need to be listed as intermediary banks.
@@ -489,13 +510,16 @@ parseHSBC <- function(file) {
       }
       #Beneficiary Bank should be in the Beneficiary field and the Beneficiary should
       #be in the BeneficiarySeqb field.
-      bnf <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
-      bAcctNum <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[1]
-      bAddr <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[3]
-      bAddr %<>% sapply(function(addr) addr[nchar(addr) > 3] %>% paste(., collapse=" ")) %>%
-        unlist() %>% unname()
+      bnfField <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}") %>% .[[1]]
+      bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAcctNum <- bnfField[1]
+      if (length(bnfField) >= 3) {
+        bAddr <- bnfField %>% .[3:length(.)] %>%
+          str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+          .[nchar(.)> 3] %>% paste(., collapse=" ")
+      } else {
+        bAddr <- NA
+      }
       bBank <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
         gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
         str_replace_all("^\\s+|\\s+$", "")
@@ -525,6 +549,10 @@ parseHSBC <- function(file) {
                     "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
                     "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
                     stringsAsFactors=F)
+
+  #Clean up the data with common things seen across compliance
+  dat$Originator %<>% str_replace_all("(?<=Llc).*", "")
+
   return(dat)
 }
 
