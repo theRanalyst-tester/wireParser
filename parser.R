@@ -415,27 +415,38 @@ parseHSBC <- function(file) {
       }
 
       #bank info
-      oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
-      #Sometimes only the SWIFT code is included in the Originator Bank field so
-      #oBank comes back as NA. In this case, set it as the SWIFT code and will replace later.
-      if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>% .[[1]] %>% .[1] %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
+      #Originator Bank can be empty, so if that's the case set it to be the debit party.
+      if (is.na(row['OriginatorBank'])) {
+        oBank <- row['DebitParty'] %>%
+          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          str_replace_all("^\\s+|\\s+$", "")
+      } else {
+        #Sometimes only the SWIFT code is included in a Bank field so the bank comes
+        #back as NA. In this case, set it as the SWIFT code and will replace later.
+        oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          str_replace_all("^\\s+|\\s+$", "")
+        if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>%
+          .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
+      }
       #BeneficiaryBank is always empty, so set it to Credit Party.
+      #Credit Party appears to never be blank, so no need to check.
       bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
         str_replace_all("^\\s+|\\s+$", "")
 
-      #There are two possibilities for the intermediary bank in this instance:
-      # 1) Debit Party 2) None
-      dpValue <- row['DebitParty']
-      obValue <- row['OriginatorBank']
-      if (grepl(dpValue, obValue, fixed=T)) {
+      #There are two possibilities for the intermediary bank if Originator Bank is
+      #not empty: 1) Debit Party 2) None iBank will be NA if Originator Bank is empty.
+      if (is.na(row['OriginatorBank'])) {
         iBank <- NA
       } else {
-        iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-          str_replace_all("^\\s+|\\s$", "")
+        dpValue <- row['DebitParty']
+        obValue <- row['OriginatorBank']
+        if (grepl(dpValue, obValue, fixed=T)) {
+          iBank <- NA
+        } else {
+          iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+            str_replace_all("^\\s+|\\s$", "")
+        }
       }
       v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
              "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
@@ -457,29 +468,50 @@ parseHSBC <- function(file) {
         } else {
           oAddr <- NA
         }
-        oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-          str_replace_all("^\\s+|\\s+$", "")
-        #There are four possibilities for the intermediary bank in this instance:
-        # 1) Credit Party 2) Debit Party 3) Both or 4) Neither
-        dpValue <- row['DebitParty']
-        cpValue <- row['CreditParty']
-        obValue <- row['OriginatorBank']
-        bbValue <- row['Beneficiary']
-        if (grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
-          iBank <- NA
-        } else if (grepl(dpValue, obValue, fixed=T) & !grepl(cpValue, bbValue, fixed=T)) {
-          iBank <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-            str_replace_all("^\\s+|\\s+$", "")
-        } else if (!grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
-          iBank <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-            str_replace_all("^\\s+|\\s+$", "")
+        #There are some instances where Originator Bank are NA. In this event, use the
+        #Debit party as the Originator Bank
+        if (is.na(row['OriginatorBank'])) {
+          oBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
         } else {
-          iBank1 <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+            gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
             str_replace_all("^\\s+|\\s+$", "")
-          iBank2 <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-            str_replace_all("^\\s+|\\s+$", "")
-          iBank <- paste(iBank1, iBank2, sep=", ")
+          if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>%
+            .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
+        }
+        #There are four possibilities for the Intermediary Bank if Originator Bank
+        #is not empty: 1) Credit Party 2) Debit Party 3) Both or 4) Neither
+        #There are only two possibility for the Intermediary Bank if it is:
+        # 1) Credit Party or 2) None
+        if (is.na(row['OriginatorBank'])) {
+          cpValue <- row['CreditParty']
+          bbValue <- row['Beneficiary']
+          if (grepl(cpValue, bbValue, fixed=T)) {
+            iBank <- NA
+          } else {
+            iBank <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+              str_replace_all("^\\s+|\\s+$", "")
+          }
+        } else {
+          dpValue <- row['DebitParty']
+          cpValue <- row['CreditParty']
+          obValue <- row['OriginatorBank']
+          bbValue <- row['Beneficiary']
+          if (grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
+            iBank <- NA
+          } else if (grepl(dpValue, obValue, fixed=T) & !grepl(cpValue, bbValue, fixed=T)) {
+            iBank <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+              str_replace_all("^\\s+|\\s+$", "")
+          } else if (!grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
+            iBank <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+              str_replace_all("^\\s+|\\s+$", "")
+          } else {
+            iBank1 <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+              str_replace_all("^\\s+|\\s+$", "")
+            iBank2 <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+              str_replace_all("^\\s+|\\s+$", "")
+            iBank <- paste(iBank1, iBank2, sep=", ")
+          }
         }
       } else {
         origField <- row['OriginatorSeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
@@ -503,6 +535,8 @@ parseHSBC <- function(file) {
           oBank <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
             gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
             str_replace_all("^\\s+|\\s+$", "")
+          if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>%
+              .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
         }
         iBank <- row['DebitParty'] %>%
           gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
@@ -523,6 +557,8 @@ parseHSBC <- function(file) {
       bBank <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
         gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
         str_replace_all("^\\s+|\\s+$", "")
+      if (is.na(bBank)) bBank <- row['Beneficiary'] %>% str_split("\\s{3}") %>%
+        .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
 
       v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
              "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
@@ -552,7 +588,20 @@ parseHSBC <- function(file) {
 
   #Clean up the data with common things seen across compliance
   dat$Originator %<>% str_replace_all("(?<=Llc).*", "") %>%
-    gsub("\\b([A-z]{3})\\b", "\\U\\1", ., perl=T)
+    str_replace_all("\\(.*\\)", "") %>%
+    gsub("\\b([A-z]{3})$", "\\U\\1", ., perl=T) %>%
+    str_replace_all("^\\d/", "") %>%
+    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
+    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
+  dat$originatorBank %<>% str_replace_all("Jpmorgan", "JPMorgan") %>%
+    str_replace_all("Hsbc", "HSBC") %>%
+    gsub("\\b([A-z]{3})$", "\\U\\1", ., perl=T)
+  dat$intermediaryBank %<>% str_replace_all("Jpmorgan", "JPMorgan") %>%
+    str_replace_all("Hsbc", "HSBC") %>%
+    gsub("\\b([A-z]{3})$", "\\U\\1", ., perl=T)
+  dat$beneficiaryBank %<>% str_replace_all("Jpmorgan", "JPMorgan") %>%
+    str_replace_all("Hsbc", "HSBC") %>%
+    gsub("\\b([A-z]{3})$", "\\U\\1", ., perl=T)
 
   return(dat)
 }
