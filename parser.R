@@ -5,7 +5,9 @@ library(dplyr)
 library(magrittr)
 library(stringr)
 library(stringdist)
+library(rPython)
 
+setwd("~/Documents/wireParser/")
 #Ensure that large amounts of money are not recorded in scientific notation
 options(scipen=999)
 
@@ -268,7 +270,7 @@ parseCitibank <- function(file, n=1) {
     dbi <- apply(tmp, 1, function(row) {
       if (!is.na(row['dbOrInterParty'])) {
         dbiValue <- row['dbOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
-          str_replace_all("^\\s+|\\s+$", "") %>% towlower()
+          str_replace_all("^\\s+|\\s+$", "") %>% tolower()
         if (is.na(dbiValue)) dbiValue <- ""
         origBankValue <- row['originatorBank'] %>% str_replace_all("\\(.*\\)", "") %>%
           str_replace_all("^\\s+|\\s+$", "") %>% tolower()
@@ -313,7 +315,6 @@ parseCitibank <- function(file, n=1) {
 
     #Check if Citibank is any of the 2-3 banks we've established, and if not
     #then set it as an intermediate bank
-
     bBankFlag <- grepl("Citi\\s?bank", bBank, ignore.case=T)
     oBankFlag <- grepl("Citi\\s?bank", oBank, ignore.case=T)
     iBankFlag <- grepl("Citi\\s?bank", iBank, ignore.case=T)
@@ -328,7 +329,6 @@ parseCitibank <- function(file, n=1) {
     })
     #For now, I'm going to ignore the Debited Party and Credited Party fields
     #as I think they're useless
-
     dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                       "Originator"=orig, "originatorAddress"=oAddr,
                       "originatorAcctNum"=oAcctNum,
@@ -387,8 +387,7 @@ parseHSBC <- function(file) {
   #best of my knowledge, only occurs if the Beneficiary is a bank. This can be
   #determined by comparing the Originator to the OriginatorSeqb field. Either
   #way, I need to assign variables based on whether or not the Beneficiary is
-  #a bank. The returned value will be a list of named vectors that will need
-  #to be separated into individual variables.
+  #a bank. The returned value will be a matrix that will need to be transposed.
   vars <- apply(tmp, 1, function(row) {
     #If there's no *Seqb variables, assign as usual
     if (is.na(row['OriginatorSeqb'])) {
@@ -481,7 +480,7 @@ parseHSBC <- function(file) {
         }
         #There are four possibilities for the Intermediary Bank if Originator Bank
         #is not empty: 1) Credit Party 2) Debit Party 3) Both or 4) Neither
-        #There are only two possibility for the Intermediary Bank if it is:
+        #There are only two possibilities for the Intermediary Bank if it is:
         # 1) Credit Party or 2) None
         if (is.na(row['OriginatorBank'])) {
           cpValue <- row['CreditParty']
@@ -628,11 +627,24 @@ parseJPMC <- function(file) {
   }
 }
 
-parseUBS <- function(file, password=NULL) {
-  #placeholder
+parseUBS <- function(file) {
+  #The UBS data files can be very messy at best, so the reader tends to find issues
+  #with the data and might not incorporate everything properly. As a result, we want
+  #to read everything in as a character column so it doesn't try to do any formatting.
+  #However, we first need to know how many columns there are.
+  python.exec("getColumns.py")
+  cols <- python.call("get_number_of_columns", file)
+  #Set a character vectors of "c"s to tell it to load all columns as character
+  colTypes <- rep("c", cols) %>% paste(., collapse="")
+  tmp <- read_csv(file, col_types=colTypes)
+  #If UBS inserts hard returns in their column names then it messes up the reader
+  #and the column names are included as a row in the data.
+  check <- (names(tmp) %in% tmp[1, ]) %>% sum()
+  if (check >= 2) tmp <- tmp[2:nrow(tmp), ]
+  return(tmp)
 }
 
-parseWireData <- function(file, bank, format, skip=0, password=NULL) {
+parseWireData <- function(file, bank, format, skip=0) {
   if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
   if (tolower(bank) %in% c("boa", "bank of america")) {
     if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
@@ -640,7 +652,7 @@ parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   }
   if (tolower(bank) %in% c("bny mellon", "bnymellon")) {
     if (tolower(format) != "xlsx") stop("BNY Mellon typically sends XLSX files. Are you sure this is the right format?")
-    return(parseBNY(file))
+    return(parseBNY(file, n=skip))
   }
   if (tolower(bank) == "capital one") {
     if (tolower(format) != "pdf") stop("Capital One typically sends PDF files. Are you sure this is the right format?")
@@ -656,10 +668,11 @@ parseWireData <- function(file, bank, format, skip=0, password=NULL) {
   }
   if (tolower(bank) %in% c("jpmc", "jpmorgan chase", "jp morgan chase", "jpmorganchase")) {
     if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("JPMC typically sends an Excel file. Are you sure this is the right format?")
-    return(parseJPMC(file))
+    return(parseJPMC(file, n=skip))
   }
   if (tolower(bank) %in% c("ubs", "ubs ag", "ubsag")) {
-    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("UBS typically sends an Excel file. Are you sure this is the right format?")
+    if (!(tolower(format) %in% c("xls", "xlsx"))) stop("UBS typically sends an Excel file that is password protected. You will need to open the Excel file yourself and save the relevant sheet as a CSV file.")
+    if (!(tolower(format) == "csv")) stop("Please use a CSV file.")
     return(parseUBS(file))
   }
 }
