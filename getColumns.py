@@ -1,5 +1,3 @@
-#!usr/env/bin python
-
 import csv
 
 def get_number_of_columns(csvFile):
