@@ -12,6 +12,12 @@ setwd("~/Documents/wireParser/")
 options(scipen=999)
 
 parseBOA <- function(file) {
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (tolower(format) != "pdf") stop("This function expects a PDF file. ",
+                                     "Please use an appropriate file.")
   dat_m <- NULL
   cmd <- paste('pdftotext -layout "', file, '"', sep='')
   system(cmd)
@@ -119,6 +125,14 @@ parseBOA <- function(file) {
 }
 
 parseBNYMellon <- function(file) {
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (!tolower(format) %in% c("csv", "xls", "xlsx")) stop("This function expects ",
+                                                          "an Excel file. ",
+                                                          "Please use an ",
+                                                          "appropriate file.")
   dat_m <- NULL
   temp <- read_excel(file, col_names=F)
   txt <- temp$X0
@@ -132,6 +146,12 @@ parseBNYMellon <- function(file) {
 }
 
 parseCapOne <- function(file) {
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (tolower(format) != "pdf") stop("This function expects a PDF file. ",
+                                     "Please use an appropriate file.")
   dat_m <- NULL
   cmd <- paste('pdftotext -layout "', file, '"', sep='')
   system(cmd)
@@ -201,9 +221,15 @@ parseCapOne <- function(file) {
 }
 
 parseCitibank <- function(file, n=1) {
-  type = file_ext(file) %>% tolower()
-  if (type %in% c("xls", "xlsx", "csv")) {
-    if (type == "csv") tmp <- read_csv(file, skip=n) else tmp <- read_excel(file, skip=n)
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (!tolower(format) %in% c("csv", "xls", "xlsx", "doc", "docx")) {
+    stop("This function expects an Excel or Word file. Please use an appropriate file.")
+  }
+  if (format %in% c("xls", "xlsx", "csv")) {
+    if (format == "csv") tmp <- read_csv(file, skip=n) else tmp <- read_excel(file, skip=n)
     if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
     defaultNames <- c("Global Id", "Instr Dt", "Originator", "Orig. Bank", "DB or INTER. Party",
                       "Debited Party", "Credited Party", "CR or INTER. Party", "Bene. Bank",
@@ -343,18 +369,29 @@ parseCitibank <- function(file, n=1) {
 }
 
 parseHSBC <- function(file) {
-  type <- file_ext(file)
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (!tolower(format) %in% c("csv", "xls", "xlsx")) stop("This function expects ",
+                                                          "an Excel file. ",
+                                                          "Please use an ",
+                                                          "appropriate file.")
   sheetName <- "Details"
-  if (type == "xls") {
+  if (format == "xls") {
     if (!("Details" %in% .Call('readxl_xls_sheets', PACKAGE='readxl', file))) {
       sheetName <- readline(prompt="In which sheet is the data located? ")
+      tmp <- read_excel(file, sheet=sheetName)
     }
-  } else {
+  } else if (format == "xlsx") {
     if (!("Details" %in% .Call('readxl_xlsx_sheets', PACKAGE='readxl', file))) {
       sheetName <- readline(prompt="In which sheet is the data located? ")
+      tmp <- read_excel(file, sheet=sheetName)
     }
+  } else {
+    tmp <- read_csv(file)
   }
-  tmp <- read_excel(file, sheet=sheetName) %>% filter(rowSums(is.na(.)) != ncol(.))
+  tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
   names(tmp) %<>% str_replace_all("_", " ") %>%
     gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
     str_replace_all(" ", "")
@@ -606,28 +643,46 @@ parseHSBC <- function(file) {
 }
 
 parseJPMC <- function(file) {
-  type = file_ext(file) %>% tolower()
-  if (type == "xls") sheetNames <- .Call("read_xls_sheets", PACKAGE="readxl", file)
-  if (type == "xlsx") sheetNames <- .Call("read_xlsx_sheets", PACKAGE="readxl", file)
-  for (sheetName in sheetNames) {
-    tmp <- read_excel(file, sheet=sheetName)
-    names(tmp) %<>% str_replace_all("_", " ") %>%
-      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-      str_replace_all(" ", "")
-    date <- tmp$PaymentDate
-    amount <- tmp$Amount %>% str_replace_all("[\\$,]", "")
-    amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
-    cur <- ifelse(grepl("\\$", tmp$Amount), "USD", "Other")
-    memo <- paste(tmp$DetPymt1, tmp$DetPymt2, tmp$DetPymt3, tmp$DetPymt4, collapse=" ")
-    orig <- tmp$OrdCust2
-    oAddr <- paste(tmp$OrdCust3, tmp$OrdCust4, collapse=" ")
-    oAcctNum <- tmp$OrdCust1
-    oBank <- tmp$DrAddr1
-    bnf
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (!tolower(format) %in% c("csv", "xls", "xlsx")) stop("This function expects ",
+                                                          "an Excel file. ",
+                                                          "Please use an ",
+                                                          "appropriate file.")
+  if (format %in% c("xls", "xlsx")) {
+    functionName <- paste("read", format, "sheets", sep="_")
+    sheetNames <- .Call(functionName, PACKAGE="readxl", file)
+    for (sheetName in sheetNames) {
+      tmp <- read_excel(file, sheet=sheetName)
+      names(tmp) %<>% str_replace_all("_", " ") %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" ", "")
+      date <- tmp$PaymentDate
+      amount <- tmp$Amount %>% str_replace_all("[\\$,]", "")
+      amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
+      cur <- ifelse(grepl("\\$", tmp$Amount), "USD", "Other")
+      memo <- paste(tmp$DetPymt1, tmp$DetPymt2, tmp$DetPymt3, tmp$DetPymt4, collapse=" ")
+      orig <- tmp$OrdCust2
+      oAddr <- paste(tmp$OrdCust3, tmp$OrdCust4, collapse=" ")
+      oAcctNum <- tmp$OrdCust1
+      oBank <- tmp$DrAddr1
+      bnf
+    }
+  } else {
+    tmp <- read_csv(file)
   }
 }
 
 parseUBS <- function(file) {
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (tolower(format) != "csv") stop("This function expects a CSV file. ",
+                                     "If you're trying to load an Excel file, ",
+                                     "Please save it as a CSV and reload it.")
   #The UBS data files can be very messy at best, so the reader tends to find issues
   #with the data and might not incorporate everything properly. As a result, we want
   #to read everything in as a character column so it doesn't try to do any formatting.
