@@ -699,37 +699,3 @@ parseUBS <- function(file) {
   return(tmp)
 }
 
-parseWireData <- function(file, bank, format, skip=0) {
-  if (!file.exists(file)) stop("Invalid file path. Please be sure to use the full file path to a valid file.")
-  if (tolower(bank) %in% c("boa", "bank of america")) {
-    if (tolower(format) != "pdf") stop("Bank of America typically sends PDF files. Are you sure you sure this is the right format?")
-    return(parseBOA(file))
-  }
-  if (tolower(bank) %in% c("bny mellon", "bnymellon")) {
-    if (tolower(format) != "xlsx") stop("BNY Mellon typically sends XLSX files. Are you sure this is the right format?")
-    return(parseBNY(file, n=skip))
-  }
-  if (tolower(bank) == "capital one") {
-    if (tolower(format) != "pdf") stop("Capital One typically sends PDF files. Are you sure this is the right format?")
-    return(parseCapOne(file))
-  }
-  if (tolower(bank) == "citibank") {
-    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("Citibank typically sends both a Word document and an Excel document. The Excel document is preferred for this tool, so please use that file.")
-    return(parseCitibank(file, n=skip, type=format))
-  }
-  if (tolower(bank) == "hsbc") {
-    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("HSBC typically sends an Excel file. Are you sure this is the right format?")
-    return(parseHSBC(file))
-  }
-  if (tolower(bank) %in% c("jpmc", "jpmorgan chase", "jp morgan chase", "jpmorganchase")) {
-    if (!(tolower(format) %in% c("xls", "xlsx", "csv"))) stop("JPMC typically sends an Excel file. Are you sure this is the right format?")
-    return(parseJPMC(file, n=skip))
-  }
-  if (tolower(bank) %in% c("ubs", "ubs ag", "ubsag")) {
-    if (!(tolower(format) %in% c("xls", "xlsx"))) stop("UBS typically sends an Excel file that is password protected. You will need to open the Excel file yourself and save the relevant sheet as a CSV file.")
-    if (!(tolower(format) == "csv")) stop("Please use a CSV file.")
-    return(parseUBS(file))
-  }
-}
-
-
