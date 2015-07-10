@@ -369,7 +369,7 @@ parseCitibank <- function(file, n=1) {
 }
 
 parseHSBC <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -388,7 +388,7 @@ parseHSBC <- function(file) {
   } else {
     tmp <- read_csv(file)
   }
-  tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
+  tmp <- tmp %>% filter(rowSums(is.na(.)) != ncol(.))
   names(tmp) %<>% str_replace_all("_", " ") %>%
     gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
     str_replace_all(" ", "")
@@ -463,9 +463,10 @@ parseHSBC <- function(file) {
           .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
       }
       #BeneficiaryBank is always empty, so set it to Credit Party.
-      #Credit Party appears to never be blank, so no need to check.
+      #Credit Party has been blank in some instances. In this case, set it to "Unknown".
       bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
         str_replace_all("^\\s+|\\s+$", "")
+      if (is.na(bBank)) bBank <- "Unknown"
 
       #There are two possibilities for the intermediary bank if Originator Bank is
       #not empty: 1) Debit Party 2) None iBank will be NA if Originator Bank is empty.
@@ -479,6 +480,14 @@ parseHSBC <- function(file) {
         } else {
           iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
             str_replace_all("^\\s+|\\s$", "")
+        }
+      }
+
+      #There have been edge cases where the Debit Party and Beneficiary are the same value
+      #and as a result HSBC is listed no where in the record. Need to rememdy this.
+      if (bnf == bBank) {
+        if (!grepl("hsbc", c(oBank, bBank, iBank), ignore.case=T)) {
+          bBank <- "HSBC"
         }
       }
       v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
