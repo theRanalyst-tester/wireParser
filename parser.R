@@ -10,6 +10,7 @@ library(rPython)
 setwd("~/Documents/wireParser/")
 #Ensure that large amounts of money are not recorded in scientific notation
 options(scipen=999)
+options(digits=15)
 
 cleanEntities <- function(data) {
   #Add some cleanup logic for entities and banks
@@ -237,6 +238,7 @@ parseCapOne <- function(file) {
     f <- FIDX[idx]
     textBlock <- txt[s:f]
 
+    #common data
     DIDX <- grep("^Wire Date", textBlock, ignore.case=T)
     date <- str_extract(textBlock[DIDX], "\\d+/\\d+/\\d+")
     AIDX <- grep("^Amount", textBlock, ignore.case=T)
@@ -248,38 +250,69 @@ parseCapOne <- function(file) {
       amount <- readline(prompt=paste(amount, "appears to be non-numeric. What should the value be? "))
     }
     CIDX <- grep("^Currency", textBlock, ignore.case=T)
-    cur <- str_extract(textBlock[CIDX], "[A-Z]{3}$")
+    cur <- str_extract(textBlock[CIDX], "(?<=Currency\\s{1,10}).*")
     #common OCR mistake is confusing "USD" with "USO", so replace that
-    cur <- ifelse(cur == "USO", "USD", cur)
-    TIDX <- grep("^Time", textBlock, ignore.case=T)
+    cur[cur == "USO"] <- "USD"
     MIDX <- grep("^OBI\\s+", textBlock)[1]
-    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10}).*") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
-    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    BBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
-    bBank <- str_extract(textBlock[BBIDX], "(?<=Recv Name\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    BANIDX <- grep("^BNF ID", textBlock)[1]
-    bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10})[A-z0-9]+")
-    BAIDX <- grep("^BNF ADDR", textBlock)[1]
-    bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ") %>%
-      str_replace_all("BNF ADDR\\d", "")
-    IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
-    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    #originator/beneficiary info
     OIDX <- grep("^Originator", textBlock, ignore.case=T)[1]
-    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
+    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10}).*") %>%
       gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    OBIDX <- grep("^Sender Name", textBlock, ignore.case=T)[1]
-    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10})[A-z]+(\\s?([A-z]+)?){0,}") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
-    oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10})[A-z0-9]+")
     OAIDX <- grep("ORG ADDR", textBlock)[1]
     oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ") %>%
       str_replace_all("ORG ADDR\\d", "")
+    #Because BNF ID matches the account number, I assume ORG ID is the
+    #Originator Account Number
+    OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
+    oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10}).*")
+
+    BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    BAIDX <- grep("^BNF ADDR", textBlock)[1]
+    bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ") %>%
+      str_replace_all("BNF ADDR\\d", "")
+    BANIDX <- grep("^BNF ID", textBlock)[1]
+    bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10}).*")
+
+    #bank info
+    #There is no "Orig Bank" field, but Sender Name appears to be the
+    #field we're looking for.
+    OBIDX <- grep("^Sender Name", textBlock, ignore.case=T)[1]
+    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    BBIDX <- grep("^Bene Bank", textBlock, ignore.case=T)[1]
+    bBank <- str_extract(textBlock[BBIDX], "(?<=Bene Bank\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
+    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    #There is a fourth bank field called Recv Name. This field appears to never
+    #be blank, but Bene Bank and Intermd Bank can be, so need to set this field
+    #and then run some logic.
+    RBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
+    rBank <- str_extract(textBlock[RBIDX], "(?<=Recv Name\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    #There are two possibilities: 1) Recv Bank is the Intermediary Bank or
+    # 2) it's the Beneficiary Bank. Because Recv Bank appears to never be empty,
+    #I'm assuming that it is the actual beneficiary bank.
+    if (is.na(bBank)) {
+      bBank <- rBank
+    } else {
+      if (is.na(iBank)) {
+        iBank <- bBank
+        bBank <- rBank
+      } else {
+        iBank <- paste(iBank, bBank, sep=", ")
+        bBank <- rBank
+      }
+    }
 
     return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
              "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
@@ -775,6 +808,7 @@ parseUBS <- function(file) {
   #common info
   date <- tmp$Date
   amount <- tmp$Amount
+  cur <- tmp$currencyCode
   memo <- tmp$OBI
 
   #originator/beneficiary info
@@ -789,5 +823,113 @@ parseUBS <- function(file) {
 
 #   dat %<>% cleanEntities()
 #   return(dat)
+}
+
+parseTDBank <- function(file) {
+  format <- file_ext(file)
+  if (!file.exists(file)) stop("Invalid file path. ",
+                               "Please be sure to use the full ",
+                               "file path to a valid file.")
+  if (tolower(format) != "pdf") stop("This function expects a PDF file. ",
+                                     "Please use an appropriate file.")
+  dat_m <- NULL
+  cmd <- paste('pdftotext -layout "', file, '"', sep='')
+  system(cmd)
+  txtFile <- file %>% file_path_sans_ext() %>% paste(., '.txt', sep='')
+  txt <- read_lines(txtFile)
+  txt %<>% str_replace_all("^\\s+|\\s+$", "")
+
+  SIDX <- grep("MIF_AMOUNT", txt)
+  FIDX <- c(tail(SIDX, -1) - 1, length(txt))
+  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+    s <- SIDX[idx]
+    f <- FIDX[idx]
+    textBlock <- txt[s:f]
+
+    #common data
+    DIDX <- grep("^Wire Date", textBlock, ignore.case=T)
+    date <- str_extract(textBlock[DIDX], "\\d+/\\d+/\\d+")
+    AIDX <- grep("^Amount", textBlock, ignore.case=T)
+    amount <- str_extract(textBlock[AIDX], "[0-9,\\.l]+") %>% str_replace_all("[\\s,]", "")
+    #common OCR mistake is to confuse a "1" with an "l", so replace it
+    amount %<>% str_replace_all("l", "1")
+    errorFlag <- as.numeric(amount) %>% is.na()
+    if (errorFlag) {
+      amount <- readline(prompt=paste(amount, "appears to be non-numeric. What should the value be? "))
+    }
+    CIDX <- grep("^Currency", textBlock, ignore.case=T)
+    cur <- str_extract(textBlock[CIDX], "(?<=Currency\\s{1,10}).*")
+    #common OCR mistake is confusing "USD" with "USO", so replace that
+    cur[cur == "USO"] <- "USD"
+    MIDX <- grep("^OBI\\s+", textBlock)[1]
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    #originator/beneficiary info
+    OIDX <- grep("^Originator", textBlock, ignore.case=T)[1]
+    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    OAIDX <- grep("ORG ADDR", textBlock)[1]
+    oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ") %>%
+      str_replace_all("ORG ADDR\\d", "")
+    #Because BNF ID matches the account number, I assume ORG ID is the
+    #Originator Account Number
+    OANIDX <- grep("^ORG ID", textBlock, ignore.case=T)[1]
+    oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10}).*")
+
+    BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    BAIDX <- grep("^BNF ADDR", textBlock)[1]
+    bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ") %>%
+      str_replace_all("BNF ADDR\\d", "")
+    BANIDX <- grep("^BNF ID", textBlock)[1]
+    bAcctNum <- str_extract(textBlock[BANIDX], "(?<=BNF ID\\s{1,10}).*")
+
+    #bank info
+    #There is no "Orig Bank" field, but Sender Name appears to be the
+    #field we're looking for.
+    OBIDX <- grep("^Sender Name", textBlock, ignore.case=T)[1]
+    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    BBIDX <- grep("^Bene Bank", textBlock, ignore.case=T)[1]
+    bBank <- str_extract(textBlock[BBIDX], "(?<=Bene Bank\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
+    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+
+    #There is a fourth bank field called Recv Name. This field appears to never
+    #be blank, but Bene Bank and Intermd Bank can be, so need to set this field
+    #and then run some logic.
+    RBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
+    rBank <- str_extract(textBlock[RBIDX], "(?<=Recv Name\\s{1,10}).*") %>%
+      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    #There are two possibilities: 1) Recv Bank is the Intermediary Bank or
+    # 2) it's the Beneficiary Bank. Because Recv Bank appears to never be empty,
+    #I'm assuming that it is the actual beneficiary bank.
+    if (is.na(bBank)) {
+      bBank <- rBank
+    } else {
+      if (is.na(iBank)) {
+        iBank <- bBank
+        bBank <- rBank
+      } else {
+        iBank <- paste(iBank, bBank, sep=", ")
+        bBank <- rBank
+      }
+    }
+
+    return(c("Date"=date, "Amount"=amount, "Currency"=cur, "Originator"=orig,
+             "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+             "originatorBank"=oBank, "intermediaryBank"=iBank,
+             "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+             "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
+  }))
+  dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
+  dat %<>% cleanEntities()
+  return(dat)
 }
 
