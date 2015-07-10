@@ -377,17 +377,14 @@ parseHSBC <- function(file) {
                                                           "an Excel file. ",
                                                           "Please use an ",
                                                           "appropriate file.")
-  sheetName <- "Details"
-  if (format == "xls") {
-    if (!("Details" %in% .Call('readxl_xls_sheets', PACKAGE='readxl', file))) {
-      sheetName <- readline(prompt="In which sheet is the data located? ")
-      tmp <- read_excel(file, sheet=sheetName)
+  if (format %in% c("xls", "xlsx")) {
+    functionName <- paste("readxl", format, "sheets", sep="_")
+    sheetNames <- .Call(functionName, PACKAGE="readxl", file)
+    if (length(sheetNames) > 1) sheetName <- "Details" else sheetName <- sheetNames
+    if (!"Details" %in% sheetNames) {
+      sheetName <- readline(prompt="What is the sheet with the data named?")
     }
-  } else if (format == "xlsx") {
-    if (!("Details" %in% .Call('readxl_xlsx_sheets', PACKAGE='readxl', file))) {
-      sheetName <- readline(prompt="In which sheet is the data located? ")
-      tmp <- read_excel(file, sheet=sheetName)
-    }
+    tmp <- read_excel(file, sheet=sheetName)
   } else {
     tmp <- read_csv(file)
   }
@@ -687,7 +684,7 @@ parseUBS <- function(file) {
   #with the data and might not incorporate everything properly. As a result, we want
   #to read everything in as a character column so it doesn't try to do any formatting.
   #However, we first need to know how many columns there are.
-  python.exec("getColumns.py")
+  python.exec("execfile('getColumns.py')")
   cols <- python.call("get_number_of_columns", file)
   #Set a character vectors of "c"s to tell it to load all columns as character
   colTypes <- rep("c", cols) %>% paste(., collapse="")
