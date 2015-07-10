@@ -764,9 +764,30 @@ parseUBS <- function(file) {
   #and the column names are included as a row in the data.
   check <- (names(tmp) %in% tmp[1, ]) %>% sum()
   if (check >= 2) tmp <- tmp[2:nrow(tmp), ]
+  names(tmp) <- c("searchValue", "Date", "Beneficiary", "orderParty", "messageType",
+                  "currencyCode", "Amount", "debitID", "debitName", "sendingBank",
+                  "orderingBank", "creditName", "intermediaryBank", "beneficiaryBank",
+                  "OBI", "BBI", "orderPartyRef", "orderPartyAddres", "creditAdvice",
+                  "creditID", "coverOrderPartyAddress", "coverOrderParty",
+                  "coverOrderingBank", "coverIntermediaryBank", "coverBeneficiaryBank",
+                  "coverBeneficiary", "coverOBI", "coverRemittance", "InternalNDX")
+
+  #common info
+  date <- tmp$Date
+  amount <- tmp$Amount
+  memo <- tmp$OBI
+
+  #originator/beneficiary info
+  orig <- "placeholder"
+  oAddr <- "placeholder"
+  oAcctNum <- "placeholder"
+  bnf <- tmp$Beneficiary %>% str_replace_all("^[A-Z]*[0-9\\-]+(?=[A-Z]+)", "")
+  bAddr <- "placeholder"
+  bAcctNum <- "placeholder"
+
   return(tmp)
 
-  dat %<>% cleanEntities()
-  return(dat)
+#   dat %<>% cleanEntities()
+#   return(dat)
 }
 
