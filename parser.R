@@ -11,6 +11,74 @@ setwd("~/Documents/wireParser/")
 #Ensure that large amounts of money are not recorded in scientific notation
 options(scipen=999)
 
+cleanEntities <- function(data) {
+  #Add some cleanup logic for entities and banks
+  data$Originator %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
+    str_replace_all("\\(.*\\)", "") %>%
+    str_replace_all("[\\.,]", "") %>%
+    str_trim() %>%
+    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
+    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
+    str_replace_all("\\bCO$", "Corporation") %>%
+    str_replace_all("\\bLTD$|\\bLT$", "Limited") %>%
+    str_replace_all("\\bINC$", "Incorporated") %>%
+    str_replace_all("\\bPty\\b", "Proprietary") %>%
+    str_replace_all("^\\d/", "") %>%
+    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
+    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
+  data$Beneficiary %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
+    str_replace_all("\\(.*\\)", "") %>%
+    str_replace_all("[\\.,]", "") %>%
+    str_trim() %>%
+    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
+    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
+    str_replace_all("\\bCO$", "Corporation") %>%
+    str_replace_all("\\bLTD$|\\bLT$", "Limited") %>%
+    str_replace_all("\\bINC$", "Incorporated") %>%
+    str_replace_all("\\bPty\\b", "Proprietary") %>%
+    str_replace_all("^\\d/", "") %>%
+    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
+    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
+  data$originatorBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_replace_all("Jpmorgan", "JPMorgan") %>%
+    str_replace_all("Hsbc", "HSBC") %>%
+    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
+    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
+    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+    str_replace_all("\\s\\d+.*", "") %>%
+    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
+    str_replace_all("\\s?-\\s?.*", "") %>%
+    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
+    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
+    str_replace_all("\\.,", "")
+  data$intermediaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_replace_all("Jpmorgan", "JPMorgan") %>%
+    str_replace_all("Hsbc", "HSBC") %>%
+    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
+    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
+    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+    str_replace_all("\\s\\d+.*", "") %>%
+    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
+    str_replace_all("\\s?-\\s?.*", "") %>%
+    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
+    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
+    str_replace_all("\\.", "")
+  data$beneficiaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_replace_all("Jpmorgan", "JPMorgan") %>%
+    str_replace_all("Hsbc", "HSBC") %>%
+    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
+    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
+    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
+    str_replace_all("\\s\\d+.*", "") %>%
+    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
+    str_replace_all("\\s?-\\s?.*", "") %>%
+    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
+    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
+    str_replace_all("\\.,", "")
+
+  return(data)
+}
+
 parseBOA <- function(file) {
   format <- file_ext(file)
   if (!file.exists(file)) stop("Invalid file path. ",
@@ -121,6 +189,7 @@ parseBOA <- function(file) {
              "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
   dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
+  dat %<>% cleanEntities()
   return(dat)
 }
 
@@ -143,6 +212,8 @@ parseBNYMellon <- function(file) {
     f <- FIDX[idx]
     textBlock <- txt[s:f]
   }))
+  dat %<>% cleanEntities()
+  return(dat)
 }
 
 parseCapOne <- function(file) {
@@ -217,6 +288,7 @@ parseCapOne <- function(file) {
              "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
   dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
+  dat %<>% cleanEntities()
   return(dat)
 }
 
@@ -367,70 +439,7 @@ parseCitibank <- function(file, n=1) {
     txt %<>% str_replace_all("\\\t|\\s{2,}", " ") %>% str_replace("^\\s+|\\s+$", "")
   }
 
-  #Add some cleanup logic for entities and banks
-  dat$Originator %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
-    str_replace_all("\\(.*\\)", "") %>%
-    str_replace_all("[\\.,]", "") %>%
-    str_trim() %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("\\bCO$", "Corporation") %>%
-    str_replace_all("\\bLTD$|\\bLT$", "Limited") %>%
-    str_replace_all("\\bINC$", "Incorporated") %>%
-    str_replace_all("\\bPty\\b", "Proprietary") %>%
-    str_replace_all("^\\d/", "") %>%
-    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
-  dat$Beneficiary %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
-    str_replace_all("\\(.*\\)", "") %>%
-    str_replace_all("[\\.,]", "") %>%
-    str_trim() %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("\\bCO$", "Corporation") %>%
-    str_replace_all("\\bLTD$|\\bLT$", "Limited") %>%
-    str_replace_all("\\bINC$", "Incorporated") %>%
-    str_replace_all("\\bPty\\b", "Proprietary") %>%
-    str_replace_all("^\\d/", "") %>%
-    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
-  dat$originatorBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("Jpmorgan", "JPMorgan") %>%
-    str_replace_all("Hsbc", "HSBC") %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
-    str_replace_all("\\s\\d+.*", "") %>%
-    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
-    str_replace_all("\\s?-\\s?.*", "") %>%
-    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
-    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
-    str_replace_all("\\.,", "")
-  dat$intermediaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("Jpmorgan", "JPMorgan") %>%
-    str_replace_all("Hsbc", "HSBC") %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
-    str_replace_all("\\s\\d+.*", "") %>%
-    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
-    str_replace_all("\\s?-\\s?.*", "") %>%
-    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
-    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
-    str_replace_all("\\.", "")
-  dat$beneficiaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("Jpmorgan", "JPMorgan") %>%
-    str_replace_all("Hsbc", "HSBC") %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
-    str_replace_all("\\s\\d+.*", "") %>%
-    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
-    str_replace_all("\\s?-\\s?.*", "") %>%
-    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
-    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
-    str_replace_all("\\.,", "")
-
+  dat %<>% cleanEntities()
   return(dat)
 }
 
@@ -694,70 +703,7 @@ parseHSBC <- function(file) {
                     "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
                     stringsAsFactors=F)
 
-  #Add some cleanup logic for entities and banks
-  dat$Originator %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
-    str_replace_all("\\(.*\\)", "") %>%
-    str_replace_all("[\\.,]", "") %>%
-    str_trim() %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("\\bCO$", "Corporation") %>%
-    str_replace_all("\\bLTD$|\\bLT$", "Limited") %>%
-    str_replace_all("\\bINC$", "Incorporated") %>%
-    str_replace_all("\\bPty\\b", "Proprietary") %>%
-    str_replace_all("^\\d/", "") %>%
-    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
-  dat$Beneficiary %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
-    str_replace_all("\\(.*\\)", "") %>%
-    str_replace_all("[\\.,]", "") %>%
-    str_trim() %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("\\bCO$", "Corporation") %>%
-    str_replace_all("\\bLTD$|\\bLT$", "Limited") %>%
-    str_replace_all("\\bINC$", "Incorporated") %>%
-    str_replace_all("\\bPty\\b", "Proprietary") %>%
-    str_replace_all("^\\d/", "") %>%
-    str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
-  dat$originatorBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("Jpmorgan", "JPMorgan") %>%
-    str_replace_all("Hsbc", "HSBC") %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
-    str_replace_all("\\s\\d+.*", "") %>%
-    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
-    str_replace_all("\\s?-\\s?.*", "") %>%
-    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
-    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
-    str_replace_all("\\.,", "")
-  dat$intermediaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("Jpmorgan", "JPMorgan") %>%
-    str_replace_all("Hsbc", "HSBC") %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
-    str_replace_all("\\s\\d+.*", "") %>%
-    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
-    str_replace_all("\\s?-\\s?.*", "") %>%
-    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
-    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
-    str_replace_all("\\.", "")
-  dat$beneficiaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all("Jpmorgan", "JPMorgan") %>%
-    str_replace_all("Hsbc", "HSBC") %>%
-    gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
-    gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
-    str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "") %>%
-    str_replace_all("\\s\\d+.*", "") %>%
-    str_replace_all("bank of new york mellon, nyc", "BNY Mellon") %>%
-    str_replace_all("\\s?-\\s?.*", "") %>%
-    str_replace_all("PTY|Pty|pty", "Proprietary") %>%
-    str_replace_all("LTD|Ltd|ltd", "Limited") %>%
-    str_replace_all("\\.,", "")
-
+  dat %<>% cleanEntities()
   return(dat)
 }
 
@@ -792,6 +738,9 @@ parseJPMC <- function(file) {
   } else {
     tmp <- read_csv(file)
   }
+
+  dat %<>% cleanEntities()
+  return(dat)
 }
 
 parseUBS <- function(file) {
@@ -816,5 +765,8 @@ parseUBS <- function(file) {
   check <- (names(tmp) %in% tmp[1, ]) %>% sum()
   if (check >= 2) tmp <- tmp[2:nrow(tmp), ]
   return(tmp)
+
+  dat %<>% cleanEntities()
+  return(dat)
 }
 
