@@ -12,7 +12,7 @@ setwd("~/Documents/wireParser/")
 options(scipen=999)
 options(digits=15)
 
-cleanEntities <- function(data) {
+clean_entities <- function(data) {
   #Add some cleanup logic for entities and banks
   data$Originator %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
     str_replace_all("\\(.*\\)", "") %>%
@@ -80,14 +80,17 @@ cleanEntities <- function(data) {
   return(data)
 }
 
-parseBOA <- function(file) {
+load_excel <- function(file) {
+
+}
+
+parse_boa <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
   if (tolower(format) != "pdf") stop("This function expects a PDF file. ",
                                      "Please use an appropriate file.")
-  dat_m <- NULL
   cmd <- paste('pdftotext -layout "', file, '"', sep='')
   system(cmd)
   txtFile <- file %>% file_path_sans_ext() %>% paste(., '.txt', sep='')
@@ -95,7 +98,7 @@ parseBOA <- function(file) {
 
   SIDX <- grep("<\\s<\\s<\\s", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
-  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+  datM <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
     s <- SIDX[idx]
     f <- FIDX[idx]
     textBlock <- txt[s:f]
@@ -189,12 +192,12 @@ parseBOA <- function(file) {
              "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
              "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
-  dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
-  dat %<>% cleanEntities()
+  dat <- datM %>% as.data.frame(stringsAsFactors=F)
+  dat %<>% clean_entities()
   return(dat)
 }
 
-parseBNYMellon <- function(file) {
+parse_bny <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -203,28 +206,26 @@ parseBNYMellon <- function(file) {
                                                           "an Excel file. ",
                                                           "Please use an ",
                                                           "appropriate file.")
-  dat_m <- NULL
   temp <- read_excel(file, col_names=F)
   txt <- temp$X0
   SIDX <- grep("PAYMT\\s+TRN\\s+[A-Z0-9]{16}", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
-  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+  datM <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
     s <- SIDX[idx]
     f <- FIDX[idx]
     textBlock <- txt[s:f]
   }))
-  dat %<>% cleanEntities()
+  dat %<>% clean_entities()
   return(dat)
 }
 
-parseCapOne <- function(file) {
+parse_capone <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
   if (tolower(format) != "pdf") stop("This function expects a PDF file. ",
                                      "Please use an appropriate file.")
-  dat_m <- NULL
   cmd <- paste('pdftotext -layout "', file, '"', sep='')
   system(cmd)
   txtFile <- file %>% file_path_sans_ext() %>% paste(., '.txt', sep='')
@@ -233,7 +234,7 @@ parseCapOne <- function(file) {
 
   SIDX <- grep("MIF_AMOUNT", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
-  dat_m <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
+  datM <- do.call(rbind, lapply(1:length(SIDX), function(idx) {
     s <- SIDX[idx]
     f <- FIDX[idx]
     textBlock <- txt[s:f]
@@ -321,11 +322,11 @@ parseCapOne <- function(file) {
              "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
   dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
-  dat %<>% cleanEntities()
+  dat %<>% clean_entities()
   return(dat)
 }
 
-parseCitibank <- function(file, n=1) {
+parse_citibank <- function(file, n=1) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -472,11 +473,11 @@ parseCitibank <- function(file, n=1) {
     txt %<>% str_replace_all("\\\t|\\s{2,}", " ") %>% str_replace("^\\s+|\\s+$", "")
   }
 
-  dat %<>% cleanEntities()
+  dat %<>% clean_entities()
   return(dat)
 }
 
-parseHSBC <- function(file) {
+parse_hsbc <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -736,11 +737,11 @@ parseHSBC <- function(file) {
                     "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
                     stringsAsFactors=F)
 
-  dat %<>% cleanEntities()
+  dat %<>% clean_entities()
   return(dat)
 }
 
-parseJPMC <- function(file) {
+parse_jpmc <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -751,24 +752,18 @@ parseJPMC <- function(file) {
                                                           "appropriate file.")
 
   #Define parsing function
-  scrapeData <- function(tmp) {
-    #cleanup
-    names(tmp) %<>% str_replace_all("_", " ") %>%
-      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-      str_replace_all(" ", "")
-    tmp$OrdCust1 %<>% str_replace_all("^/", "")
-    tmp$AcctPty1 %<>% str_replace_all("^/", "")
-    tmp$CrId %<>% str_replace_all("^/", "")
-    tmp$DrId %<>% str_replace_all("^/", "")
-    tmp$UltBene1 %<>% str_replace_all("^/", "")
+  findFlow <- function(row) {
 
     #common data
-    date <- tmp$PaymentDate
-    amount <- tmp$Amount %>% str_replace_all("[\\$,]", "")
+    date <- row['PaymentDate'] %>% as.Date(format="%m/%d/%Y")
+    amount <- row['Amount'] %>% str_replace_all("[\\$,]", "")
     amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep=".")) %>%
       str_replace_all("[\\$,]", "")
-    cur <- ifelse(grepl("\\$", tmp$Amount), "USD", NA)
-    memo <- paste(tmp$DetPymt1, tmp$DetPymt2, tmp$DetPymt3, tmp$DetPymt4, collapse=" ")
+    #It's simply assumed that the currency is in dollars. This might not be right.
+    cur <- "USD"
+    memo <- paste(row['DetPymt1'], row['DetPymt2'],
+                  row['DetPymt3'], row['DetPymt4'], sep=" ") %>%
+      str_replace_all(" NA", "")
 
     #originator/beneficiary data
     #There are edge cases in which the entity is not found in the OrdCust2 field
@@ -778,22 +773,26 @@ parseJPMC <- function(file) {
     #the left, then the OrdCust1 is often a continuation of that entity's name.
     #In addition to this issue, OrdCust1 can also be blank, which means the
     #Originator has an account with JPMC and can be found in the DrAddr1 field.
-    if (is.na(tmp$OrdCust1)) {
-      orig <- tmp$DrAddr1
-      oAcctNum <- tmp$DrId
-      oAddr <- paste(tmp$DrAddr2, tmp$DrAddr3, tmp$DrAddr4, sep=" ")
+    if (is.na(row['OrdCust1'])) {
+      orig <- row['DrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAcctNum <- row['DrId']
+      oAddr <- paste(row['DrAddr2'], row['DrAddr3'], row['DrAddr4'], sep=" ") %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" Na| Null", "")
     } else {
-      numberCount <- tmp$OrdCust1 %>% str_match_all("\\d") %>% .[[1]] %>% length()
-      ratio <- numberCount / nchar(tmp$OrdCust1)
+      numberCount <- row['OrdCust1'] %>% str_match_all("\\d") %>% .[[1]] %>% length()
+      ratio <- numberCount / nchar(row['OrdCust1'])
       if (ratio > 0.60) {
-        orig <- tmp$OrdCust2
-        oAcctNum <- tmp$OrdCust1
+        orig <- row['OrdCust2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oAcctNum <- row['OrdCust1']
       } else {
-        orig <- paste(tmp$OrdCust1, tmp$OrdCust2, sep="")
+        orig <- paste(row['OrdCust1'], row['OrdCust2'], sep="") %>%
+          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         oAcctNum <- NA
       }
-      oAddr <- paste(tmp$OrdCust3, tmp$OrdCust4, collapse=" ") %>%
-          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAddr <- paste(row['OrdCust3'], row['OrdCust4'], collapse=" ") %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" Na| Null", "")
     }
     #The Beneficiary can be in one of two fields: AcctPty or UltBene. The
     #Beneficiary is in the UltBene field if the AcctPty field is a bank. In this
@@ -801,65 +800,116 @@ parseJPMC <- function(file) {
     #So let's introduce some logic to check for that. In addition, the same issue
     #that was mentioned above with Originator can happen here, so check for that
     #as well.
-    if (is.na(tmp$UltBene2)) {
-      numberCount <- tmp$AcctPty1 %>% str_match_all("\\d") %>% .[[1]] %>% length()
-      ratio <- numberCount / nchar(tmp$AcctPty1)
+    if (is.na(row['UltBene2'])) {
+      numberCount <- row['AcctPty1'] %>% str_match_all("\\d") %>% .[[1]] %>% length()
+      ratio <- numberCount / nchar(row['AcctPty1'])
       if (ratio > 0.60) {
-        bnf <- tmp$AcctPty2
-        bAcctNum <- tmp$AcctPty1
+        bnf <- row['AcctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bAcctNum <- row['AcctPty1']
       } else {
-        bnf <- paste(tmp$AcctPty1, tmp$AcctPty2, sep="")
+        bnf <- paste(row['AcctPty1'], row['AcctPty2'], sep="") %>%
+          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         bAcctNum <- NA
       }
-      bAddr <- paste(tmp$AcctPty3, tmp$AcctPty4, tmp$AcctyPty5) %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAddr <- paste(row['AcctPty3'], row['AcctPty4'], row['AcctyPty5'], sep=" ") %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" Na| Null", "")
     } else {
-      numberCount <- tmp$UltBene1 %>% str_match_all("\\d") %>% .[[1]] %>% length()
-      ratio <- numberCount / nchar(tmp$UltBene1)
+      numberCount <- row['UltBene1'] %>% str_match_all("\\d") %>% .[[1]] %>% length()
+      ratio <- numberCount / nchar(row['UltBene1'])
       if (ratio > 0.60) {
-        bnf <- tmp$UltBene2
-        bAcctNum <- tmp$UltBene1
+        bnf <- row['UltBene2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bAcctNum <- row['UltBene1']
       } else {
-        bnf <- paste(tmp$UltBene1, tmp$UltBene2, sep="")
+        bnf <- paste(row['UltBene1'], row['UltBene2'], sep="") %>%
+          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         bAcctNum <- NA
       }
+      bAddr <- paste(row['UltBene3'], row['UltBene4'], row['UltBene5'], sep=" ") %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" Na| Null", "")
     }
 
     #bank info
-    #If the AcctPty fields are empty, it's presumably because the Originator has
-    #an account with JPMC, so they are the ones directly debited. Otherwise, JPMC
-    #debits the Originator's bank and so Originator Bank would be listed in the
-    #DrAddr field.
-    if (is.na(tmp$OrdCust2)) {
+    #The bank info gets a bit complicated with JPMC, but essentially the DrAddr
+    #and CrAddr fields are who JPMC debited and credited, respectively. As a result,
+    #the DrAddr and CrAddr fields are almost always banks, but can be entities if those
+    #entities have accounts at JPMC. Aside from that, if an Originator's bank does not
+    #have a relationship with JPMC, it will go through another bank, which will then be
+    #listed in the OrdBank field. Same with the Beneficiary's bank, except that bank will
+    #be listed in the AcctPty field. To ensure accuracy, start with the Originator and
+    #work through the flow of funds to get all banks.
+    if (is.na(row['OrdCust2'])) {
       oBank <- "JPMorgan Chase"
     } else {
-      oBank <- tmp$DrAddr1 %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      if (is.na(row['OrdBank1'])) {
+        oBank <- row['DrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      } else {
+        oBank <- row['OrdBank1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        iBank <- row['DrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      }
     }
-    #It's obviously possible that a wire would come into a customer who has an
-    #account with JPMC. In this instance, the AcctPty field will be empty.
-    if (is.na(tmp$AcctPty2)) {
+    if (is.na(row['AcctPty2']) & is.na(row['UltBene2'])) {
       bBank <- "JPMorgan Chase"
+    } else if (any(is.na(row['AcctPty2']), is.na(row['UltBene2']))) {
+      bBank <- row['CrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     } else {
+      bBank <- row['AcctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      if (!exists("iBank")) {
+        iBank <- row['CrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      } else {
+        ib2 <- row['CrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        iBank <- paste(iBank, "JPMorgan Chase", ib2, sep=", ")
+      }
+    }
+    if (!exists("iBank")) {
+      iBank <- "JPMorgan Chase"
+    } else {
+      if (!grepl("JPMorgan Chase", iBank)) iBank %<>% c(., "JPMorgan Chase")
+    }
 
-
+    dataRow <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
+                          "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+                          "originatorBank"=oBank, "intermediaryBank"=iBank,
+                          "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+                          "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
+                          stringsAsFactors=F)
   }
 
   if (format %in% c("xls", "xlsx")) {
-    functionName <- paste("read", format, "sheets", sep="_")
+    functionName <- paste("readxl", format, "sheets", sep="_")
     sheetNames <- .Call(functionName, PACKAGE="readxl", file)
     for (sheetName in sheetNames) {
       tmp <- read_excel(file, sheet=sheetName)
-
+      #cleanup
+      names(tmp) %<>% str_replace_all("_", " ") %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" ", "")
+      tmp$OrdCust1 %<>% str_replace_all("^/", "")
+      tmp$AcctPty1 %<>% str_replace_all("^/", "")
+      tmp$CrId %<>% str_replace_all("^/", "")
+      tmp$DrId %<>% str_replace_all("^/", "")
+      tmp$UltBene1 %<>% str_replace_all("^/", "")
+      dat_m <- do.call(rbind, apply(tmp, 1, function(row) findFlow(row)))
     }
   } else {
     tmp <- read_csv(file)
+    names(tmp) %<>% str_replace_all("_", " ") %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all(" ", "")
+    tmp$OrdCust1 %<>% str_replace_all("^/", "")
+    tmp$AcctPty1 %<>% str_replace_all("^/", "")
+    tmp$CrId %<>% str_replace_all("^/", "")
+    tmp$DrId %<>% str_replace_all("^/", "")
+    tmp$UltBene1 %<>% str_replace_all("^/", "")
+    dat_m <- do.call(rbind, apply(tmp, 1, findFlow()))
   }
 
-  dat %<>% cleanEntities()
+  dat %<>% clean_entities()
   return(dat)
 }
 
-parseUBS <- function(file) {
+parse_ubs <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -904,11 +954,11 @@ parseUBS <- function(file) {
 
   return(tmp)
 
-#   dat %<>% cleanEntities()
+#   dat %<>% clean_entities()
 #   return(dat)
 }
 
-parseTDBank <- function(file) {
+parse_tdbank <- function(file) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -1012,7 +1062,7 @@ parseTDBank <- function(file) {
              "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo))
   }))
   dat <- dat_m %>% as.data.frame(stringsAsFactors=F)
-  dat %<>% cleanEntities()
+  dat %<>% clean_entities()
   return(dat)
 }
 
