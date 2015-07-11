@@ -81,7 +81,7 @@ cleanEntities <- function(data) {
 }
 
 parseBOA <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -195,7 +195,7 @@ parseBOA <- function(file) {
 }
 
 parseBNYMellon <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -218,7 +218,7 @@ parseBNYMellon <- function(file) {
 }
 
 parseCapOne <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -326,7 +326,7 @@ parseCapOne <- function(file) {
 }
 
 parseCitibank <- function(file, n=1) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -741,7 +741,7 @@ parseHSBC <- function(file) {
 }
 
 parseJPMC <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -749,24 +749,107 @@ parseJPMC <- function(file) {
                                                           "an Excel file. ",
                                                           "Please use an ",
                                                           "appropriate file.")
+
+  #Define parsing function
+  scrapeData <- function(tmp) {
+    #cleanup
+    names(tmp) %<>% str_replace_all("_", " ") %>%
+      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+      str_replace_all(" ", "")
+    tmp$OrdCust1 %<>% str_replace_all("^/", "")
+    tmp$AcctPty1 %<>% str_replace_all("^/", "")
+    tmp$CrId %<>% str_replace_all("^/", "")
+    tmp$DrId %<>% str_replace_all("^/", "")
+    tmp$UltBene1 %<>% str_replace_all("^/", "")
+
+    #common data
+    date <- tmp$PaymentDate
+    amount <- tmp$Amount %>% str_replace_all("[\\$,]", "")
+    amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep=".")) %>%
+      str_replace_all("[\\$,]", "")
+    cur <- ifelse(grepl("\\$", tmp$Amount), "USD", NA)
+    memo <- paste(tmp$DetPymt1, tmp$DetPymt2, tmp$DetPymt3, tmp$DetPymt4, collapse=" ")
+
+    #originator/beneficiary data
+    #There are edge cases in which the entity is not found in the OrdCust2 field
+    #It is sometimes in the field to the left, so need to check that the field to
+    #the left is an account number and not an entity name. To do this, check the
+    #ratio of numbers to letters in the string. If the entity is in the field to
+    #the left, then the OrdCust1 is often a continuation of that entity's name.
+    #In addition to this issue, OrdCust1 can also be blank, which means the
+    #Originator has an account with JPMC and can be found in the DrAddr1 field.
+    if (is.na(tmp$OrdCust1)) {
+      orig <- tmp$DrAddr1
+      oAcctNum <- tmp$DrId
+      oAddr <- paste(tmp$DrAddr2, tmp$DrAddr3, tmp$DrAddr4, sep=" ")
+    } else {
+      numberCount <- tmp$OrdCust1 %>% str_match_all("\\d") %>% .[[1]] %>% length()
+      ratio <- numberCount / nchar(tmp$OrdCust1)
+      if (ratio > 0.60) {
+        orig <- tmp$OrdCust2
+        oAcctNum <- tmp$OrdCust1
+      } else {
+        orig <- paste(tmp$OrdCust1, tmp$OrdCust2, sep="")
+        oAcctNum <- NA
+      }
+      oAddr <- paste(tmp$OrdCust3, tmp$OrdCust4, collapse=" ") %>%
+          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    }
+    #The Beneficiary can be in one of two fields: AcctPty or UltBene. The
+    #Beneficiary is in the UltBene field if the AcctPty field is a bank. In this
+    #situation, that most likely means there is a second intermediary bank.
+    #So let's introduce some logic to check for that. In addition, the same issue
+    #that was mentioned above with Originator can happen here, so check for that
+    #as well.
+    if (is.na(tmp$UltBene2)) {
+      numberCount <- tmp$AcctPty1 %>% str_match_all("\\d") %>% .[[1]] %>% length()
+      ratio <- numberCount / nchar(tmp$AcctPty1)
+      if (ratio > 0.60) {
+        bnf <- tmp$AcctPty2
+        bAcctNum <- tmp$AcctPty1
+      } else {
+        bnf <- paste(tmp$AcctPty1, tmp$AcctPty2, sep="")
+        bAcctNum <- NA
+      }
+      bAddr <- paste(tmp$AcctPty3, tmp$AcctPty4, tmp$AcctyPty5) %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    } else {
+      numberCount <- tmp$UltBene1 %>% str_match_all("\\d") %>% .[[1]] %>% length()
+      ratio <- numberCount / nchar(tmp$UltBene1)
+      if (ratio > 0.60) {
+        bnf <- tmp$UltBene2
+        bAcctNum <- tmp$UltBene1
+      } else {
+        bnf <- paste(tmp$UltBene1, tmp$UltBene2, sep="")
+        bAcctNum <- NA
+      }
+    }
+
+    #bank info
+    #If the AcctPty fields are empty, it's presumably because the Originator has
+    #an account with JPMC, so they are the ones directly debited. Otherwise, JPMC
+    #debits the Originator's bank and so Originator Bank would be listed in the
+    #DrAddr field.
+    if (is.na(tmp$OrdCust2)) {
+      oBank <- "JPMorgan Chase"
+    } else {
+      oBank <- tmp$DrAddr1 %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    }
+    #It's obviously possible that a wire would come into a customer who has an
+    #account with JPMC. In this instance, the AcctPty field will be empty.
+    if (is.na(tmp$AcctPty2)) {
+      bBank <- "JPMorgan Chase"
+    } else {
+
+
+  }
+
   if (format %in% c("xls", "xlsx")) {
     functionName <- paste("read", format, "sheets", sep="_")
     sheetNames <- .Call(functionName, PACKAGE="readxl", file)
     for (sheetName in sheetNames) {
       tmp <- read_excel(file, sheet=sheetName)
-      names(tmp) %<>% str_replace_all("_", " ") %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" ", "")
-      date <- tmp$PaymentDate
-      amount <- tmp$Amount %>% str_replace_all("[\\$,]", "")
-      amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
-      cur <- ifelse(grepl("\\$", tmp$Amount), "USD", "Other")
-      memo <- paste(tmp$DetPymt1, tmp$DetPymt2, tmp$DetPymt3, tmp$DetPymt4, collapse=" ")
-      orig <- tmp$OrdCust2
-      oAddr <- paste(tmp$OrdCust3, tmp$OrdCust4, collapse=" ")
-      oAcctNum <- tmp$OrdCust1
-      oBank <- tmp$DrAddr1
-      bnf
+
     }
   } else {
     tmp <- read_csv(file)
@@ -777,7 +860,7 @@ parseJPMC <- function(file) {
 }
 
 parseUBS <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
@@ -826,7 +909,7 @@ parseUBS <- function(file) {
 }
 
 parseTDBank <- function(file) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
                                "file path to a valid file.")
