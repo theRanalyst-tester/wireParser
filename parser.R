@@ -371,12 +371,9 @@ parse_citibank <- function(file, skip=1) {
     #load the file and clean it up
     tmp <- load_excel(file, skipNumber=skip)
     if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
-    defaultNames <- c("Global Id", "Instr Dt", "Originator", "Orig. Bank", "DB or INTER. Party",
-                      "Debited Party", "Credited Party", "CR or INTER. Party", "Bene. Bank",
-                      "Beneficiary", "Amount", "Orig Bene Info ")
-    if (!all(names(tmp) %in% defaultNames)) stop("This tool requires a specific set of ",
-                                                 "variables for Citibank spreadsheets. ",
-                                                 "Please see the documentation for this tool.")
+    #For now, I'm going to make a bold assumption that the variable names will stay the
+    #same. In the future, I'll need to figure out a way to dynamically identify the
+    #appropriate names. But that's probably true for all of these files...
     names(tmp) <- c("globalID", "instructionDate", "originator", "originatorBank",
                     "dbOrInterParty", "debitedParty", "creditedParty", "crOrInterParty",
                     "beneficiaryBank", "beneficiary","amount", "OBI")
@@ -527,23 +524,23 @@ parse_hsbc <- function(file) {
   tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
 
   #common data
-  date <- tmp$TransactionDate %>% as.Date(format="%m/%d/%Y")
+  date <- tmp$transactionDate %>% as.Date(format="%m/%d/%Y")
   amount <- tmp$Amount
   amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
-  cur <- tmp$CcyCodeCurrency
+  cur <- tmp$ccyCodeCurrency
   memo <- apply(tmp, 1, function(row) {
-    if (is.na(row['SenderBankCorresp'])) {
-      if (is.na(row['ReceiverBankCorresp'])) {
+    if (is.na(row['senderBankCorresp'])) {
+      if (is.na(row['receiverBankCorresp'])) {
         val <- NA
       } else {
-        val <- paste("Recieving Bank:", row['ReceiverBankCorresp'])
+        val <- paste("Recieving Bank:", row['receiverBankCorresp'])
       }
     } else {
-      if (is.na(row['RecieverBankCorresp'])) {
-        val <- paste("Sending Bank:", row['SenderBankCorresp'])
+      if (is.na(row['recieverBankCorresp'])) {
+        val <- paste("Sending Bank:", row['senderBankCorresp'])
       } else {
-        val <- paste("Sending Bank:", row['SenderBankCorresp'],
-                     "Recieving Bank:", row['ReceiverBankCorresp'])
+        val <- paste("Sending Bank:", row['senderBankCorresp'],
+                     "Recieving Bank:", row['receiverBankCorresp'])
       }
     }
     val
@@ -557,7 +554,7 @@ parse_hsbc <- function(file) {
   #a bank. The returned value will be a matrix that will need to be transposed.
   vars <- apply(tmp, 1, function(row) {
     #If there's no *Seqb variables, assign as usual
-    if (is.na(row['OriginatorSeqb'])) {
+    if (is.na(row['originatorSeqb'])) {
       #originator/beneficiary info
       origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
       orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
@@ -582,36 +579,36 @@ parse_hsbc <- function(file) {
 
       #bank info
       #Originator Bank can be empty, so if that's the case set it to be the debit party.
-      if (is.na(row['OriginatorBank'])) {
+      if (is.na(row['originatorBank'])) {
         oBank <- row['DebitParty'] %>%
           gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
           str_replace_all("^\\s+|\\s+$", "")
       } else {
         #Sometimes only the SWIFT code is included in a Bank field so the bank comes
         #back as NA. In this case, set it as the SWIFT code and will replace later.
-        oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+        oBank <- row['originatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
           gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
           str_replace_all("^\\s+|\\s+$", "")
-        if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>%
+        if (is.na(oBank)) oBank <- row['originatorBank'] %>% str_split("\\s{3}") %>%
           .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
       }
       #BeneficiaryBank is always empty, so set it to Credit Party.
       #Credit Party has been blank in some instances. In this case, set it to "Unknown".
-      bBank <- row['CreditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+      bBank <- row['creditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
         str_replace_all("^\\s+|\\s+$", "")
       if (is.na(bBank)) bBank <- "Unknown"
 
       #There are two possibilities for the intermediary bank if Originator Bank is
       #not empty: 1) Debit Party 2) None iBank will be NA if Originator Bank is empty.
-      if (is.na(row['OriginatorBank'])) {
+      if (is.na(row['originatorBank'])) {
         iBank <- NA
       } else {
-        dpValue <- row['DebitParty']
-        obValue <- row['OriginatorBank']
+        dpValue <- row['debitParty']
+        obValue <- row['originatorBank']
         if (grepl(dpValue, obValue, fixed=T)) {
           iBank <- NA
         } else {
-          iBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+          iBank <- row['debitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
             str_replace_all("^\\s+|\\s$", "")
         }
       }
@@ -632,7 +629,7 @@ parse_hsbc <- function(file) {
     } else {
       #Check if Originator == OriginatorSeqb. If not, then the Originator is (presumably)
       #a bank and should be reset to the actual entity.
-      if (row['Originator'] == row['OriginatorSeqb']) {
+      if (row['Originator'] == row['originatorSeqb']) {
         origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
         orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
         oAcctNum <- origField[1]
@@ -645,21 +642,21 @@ parse_hsbc <- function(file) {
         }
         #There are some instances where Originator Bank are NA. In this event, use the
         #Debit party as the Originator Bank
-        if (is.na(row['OriginatorBank'])) {
-          oBank <- row['DebitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        if (is.na(row['originatorBank'])) {
+          oBank <- row['debitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
         } else {
-          oBank <- row['OriginatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
+          oBank <- row['originatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
             gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
             str_replace_all("^\\s+|\\s+$", "")
-          if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>%
+          if (is.na(oBank)) oBank <- row['originatorBank'] %>% str_split("\\s{3}") %>%
             .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
         }
         #There are four possibilities for the Intermediary Bank if Originator Bank
         #is not empty: 1) Credit Party 2) Debit Party 3) Both or 4) Neither
         #There are only two possibilities for the Intermediary Bank if it is:
         # 1) Credit Party or 2) None
-        if (is.na(row['OriginatorBank'])) {
-          cpValue <- row['CreditParty']
+        if (is.na(row['originatorBank'])) {
+          cpValue <- row['creditParty']
           bbValue <- row['Beneficiary']
           if (grepl(cpValue, bbValue, fixed=T)) {
             iBank <- NA
@@ -668,9 +665,9 @@ parse_hsbc <- function(file) {
               str_replace_all("^\\s+|\\s+$", "")
           }
         } else {
-          dpValue <- row['DebitParty']
-          cpValue <- row['CreditParty']
-          obValue <- row['OriginatorBank']
+          dpValue <- row['debitParty']
+          cpValue <- row['creditParty']
+          obValue <- row['originatorBank']
           bbValue <- row['Beneficiary']
           if (grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
             iBank <- NA
@@ -689,7 +686,7 @@ parse_hsbc <- function(file) {
           }
         }
       } else {
-        origField <- row['OriginatorSeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
+        origField <- row['originatorSeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
         orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
         oAcctNum <- origField[1]
         if (length(origField) >= 3) {
@@ -702,24 +699,24 @@ parse_hsbc <- function(file) {
         #There are some instances in which the OriginatorSeqb field is a SWIFT code
         #that doesn't match any of the banks listed, so that needs to be the Originator
         #bank and the DebitParty and Originator need to be listed as intermediary banks.
-        dpCheck <- row['DebitParty']
+        dpCheck <- row['debitParty']
         origCheck <- row['Originator']
-        if (!is.na(row['OriginatorBankSeqb']) & grepl(dpCheck, origCheck, ignore.case=T)) {
-          oBank <- row['OriginatorBankSeqb']
+        if (!is.na(row['originatorBankSeqb']) & grepl(dpCheck, origCheck, ignore.case=T)) {
+          oBank <- row['originatorBankSeqb']
         } else {
           oBank <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
             gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
             str_replace_all("^\\s+|\\s+$", "")
-          if (is.na(oBank)) oBank <- row['OriginatorBank'] %>% str_split("\\s{3}") %>%
+          if (is.na(oBank)) oBank <- row['originatorBank'] %>% str_split("\\s{3}") %>%
               .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
         }
-        iBank <- row['DebitParty'] %>%
+        iBank <- row['debitParty'] %>%
           gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
           str_replace_all("^\\s+|\\s+$", "")
       }
       #Beneficiary Bank should be in the Beneficiary field and the Beneficiary should
       #be in the BeneficiarySeqb field.
-      bnfField <- row['BeneficiarySeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
+      bnfField <- row['beneficiarySeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
       bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
       bAcctNum <- bnfField[1]
       if (length(bnfField) >= 3) {
