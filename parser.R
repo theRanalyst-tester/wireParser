@@ -11,10 +11,6 @@ setwd("~/Documents/wireParser/")
 #Ensure that large amounts of money are not recorded in scientific notation or rounded
 options(scipen=999)
 options(digits=15)
-#Make a call to Python to generate a function to get number of columns in an Excel file.
-#We don't want Hadley's functions trying to format any of our data as it causes issues
-#with readability for end users.
-python.exec("execfile('getColumns.py')")
 
 clean_entities <- function(data) {
   #Add some cleanup logic for entities and banks
@@ -87,9 +83,9 @@ clean_entities <- function(data) {
 load_excel <- function(file, sheet=1, skip=0, colNames=T) {
   format <- file_ext(file)
   if (format == "csv") {
+    n <- read_csv(file, n_max=1) %>% names() %>% length()
+    colTypes <- rep("c", n) %>% paste(., collapse='')
     tmp <- read_csv(file, col_types=colTypes, col_names=colNames, skip=skipNumber)
-    n <- python.call("get_number_of_columns", file)
-    colTypes <- rep("c", n) %>% paste(., collapse="")
   } else {
     #check for sheet name in sheet names
     functionName <- paste("readxl", format, "sheets", sep="_")
