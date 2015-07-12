@@ -8,9 +8,13 @@ library(stringdist)
 library(rPython)
 
 setwd("~/Documents/wireParser/")
-#Ensure that large amounts of money are not recorded in scientific notation
+#Ensure that large amounts of money are not recorded in scientific notation or rounded
 options(scipen=999)
 options(digits=15)
+#Make a call to Python to generate a function to get number of columns in an Excel file.
+#We don't want Hadley's functions trying to format any of our data as it causes issues
+#with readability for end users.
+python.exec("execfile('getColumns.py')")
 
 clean_entities <- function(data) {
   #Add some cleanup logic for entities and banks
@@ -80,8 +84,41 @@ clean_entities <- function(data) {
   return(data)
 }
 
-load_excel <- function(file) {
+load_excel <- function(file, sheet=1, skip=0, colNames=T) {
+  format <- file_ext(file)
+  if (format == "csv") {
+    tmp <- read_csv(file, col_types=colTypes, col_names=colNames, skip=skipNumber)
+    n <- python.call("get_number_of_columns", file)
+    colTypes <- rep("c", n) %>% paste(., collapse="")
+  } else {
+    #check for sheet name in sheet names
+    functionName <- paste("readxl", format, "sheets", sep="_")
+    sheetNames <- .Call(functionName, PACKAGE="readxl", file)
+    while (!sheet %in% sheetNames) {
+      sheet <- readline(prompt="What is the name of the data sheet? ")
+    }
+    #get number of columns and create a vector of column types
+    sheetIndex <- which(sheetNames == sheet)
+    if (colNames) {
+      functionName <- paste("readxl", format, "col_names", sep="_")
+      colNames <- .Call(functionName, PACKAGE = 'readxl', file, sheetIndex, skip)
+      n <- length(colNames)
+      colTypes <- rep("text", n)
+      tmp <- read_excel(file, col_types=colTypes, sheet=sheet, skip=skip)
+    } else {
+      #This is for files like those from Bank of New York Mellon
+      tmp <- read_excel(file, sheet, col_names=F)
+    }
+  }
+  names(tmp) %<>% str_replace_all("_", " ") %>%
+    str_trim() %>%
+    gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_replace_all("\\s?/\\s?", " ") %>%
+    str_replace_all(" ", "")
+  #want variables names to be camel case if they're more than one word, otherwise capitalized
+  names(tmp) %<>% gsub("^([A-Z])(?=[a-z]+[A-Z])", "\\L\\1", ., perl=T)
 
+  return(tmp)
 }
 
 parse_boa <- function(file) {
@@ -206,7 +243,7 @@ parse_bny <- function(file) {
                                                           "an Excel file. ",
                                                           "Please use an ",
                                                           "appropriate file.")
-  temp <- read_excel(file, col_names=F)
+  tmp <- load_excel(file, colNames=F)
   txt <- temp$X0
   SIDX <- grep("PAYMT\\s+TRN\\s+[A-Z0-9]{16}", txt)
   FIDX <- c(tail(SIDX, -1) - 1, length(txt))
@@ -326,7 +363,7 @@ parse_capone <- function(file) {
   return(dat)
 }
 
-parse_citibank <- function(file, n=1) {
+parse_citibank <- function(file, skip=1) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -335,15 +372,18 @@ parse_citibank <- function(file, n=1) {
     stop("This function expects an Excel or Word file. Please use an appropriate file.")
   }
   if (format %in% c("xls", "xlsx", "csv")) {
-    if (format == "csv") tmp <- read_csv(file, skip=n) else tmp <- read_excel(file, skip=n)
+    #load the file and clean it up
+    tmp <- load_excel(file, skipNumber=skip)
     if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
     defaultNames <- c("Global Id", "Instr Dt", "Originator", "Orig. Bank", "DB or INTER. Party",
                       "Debited Party", "Credited Party", "CR or INTER. Party", "Bene. Bank",
                       "Beneficiary", "Amount", "Orig Bene Info ")
-    if (!all(names(tmp) %in% defaultNames)) stop("This tool requires a specific set of variables for Citibank spreadsheets. Please see the documentation for this tool.")
-    names(tmp) <- c("globalID", "instructionDate", "originator", "originatorBank", "dbOrInterParty",
-                    "debitedParty", "creditedParty", "crOrInterParty", "beneficiaryBank", "beneficiary",
-                    "amount", "OBI")
+    if (!all(names(tmp) %in% defaultNames)) stop("This tool requires a specific set of ",
+                                                 "variables for Citibank spreadsheets. ",
+                                                 "Please see the documentation for this tool.")
+    names(tmp) <- c("globalID", "instructionDate", "originator", "originatorBank",
+                    "dbOrInterParty", "debitedParty", "creditedParty", "crOrInterParty",
+                    "beneficiaryBank", "beneficiary","amount", "OBI")
     tmp <- apply(tmp, 2, function(z) ifelse(z %in% c("()", " "), NA, z)) %>%
       as.data.frame(stringsAsFactors=F)
     tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
@@ -486,21 +526,9 @@ parse_hsbc <- function(file) {
                                                           "an Excel file. ",
                                                           "Please use an ",
                                                           "appropriate file.")
-  if (format %in% c("xls", "xlsx")) {
-    functionName <- paste("readxl", format, "sheets", sep="_")
-    sheetNames <- .Call(functionName, PACKAGE="readxl", file)
-    if (length(sheetNames) > 1) sheetName <- "Details" else sheetName <- sheetNames
-    if (!"Details" %in% sheetNames) {
-      sheetName <- readline(prompt="What is the sheet with the data named?")
-    }
-    tmp <- read_excel(file, sheet=sheetName)
-  } else {
-    tmp <- read_csv(file)
-  }
-  tmp <- tmp %>% filter(rowSums(is.na(.)) != ncol(.))
-  names(tmp) %<>% str_replace_all("_", " ") %>%
-    gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-    str_replace_all(" ", "")
+
+  tmp <- load_excel(file, sheet="Details")
+  tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
 
   #common data
   date <- tmp$TransactionDate %>% as.Date(format="%m/%d/%Y")
@@ -921,8 +949,7 @@ parse_ubs <- function(file) {
   #with the data and might not incorporate everything properly. As a result, we want
   #to read everything in as a character column so it doesn't try to do any formatting.
   #However, we first need to know how many columns there are.
-  python.exec("execfile('getColumns.py')")
-  cols <- python.call("get_number_of_columns", file)
+  n <- python.call("get_number_of_columns", file)
   #Set a character vectors of "c"s to tell it to load all columns as character
   colTypes <- rep("c", cols) %>% paste(., collapse="")
   tmp <- read_csv(file, col_types=colTypes)
