@@ -80,7 +80,7 @@ clean_entities <- function(data) {
 }
 
 load_excel <- function(file, sheet=1, skip=0, colNames=T) {
-  format <- file_ext(file)
+  format <- file_ext(file) %>% tolower()
   if (format == "csv") {
     n <- read_csv(file, n_max=1) %>% names() %>% length()
     colTypes <- rep("c", n) %>% paste(., collapse='')
@@ -236,7 +236,7 @@ parse_boa <- function(file) {
   return(dat)
 }
 
-parse_bny <- function(file) {
+parse_bny <- function(file, skip=0, sheet=1) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -365,7 +365,7 @@ parse_capone <- function(file) {
   return(dat)
 }
 
-parse_citibank <- function(file, skip=1) {
+parse_citibank <- function(file, skip=1, sheet=1) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -375,7 +375,7 @@ parse_citibank <- function(file, skip=1) {
   }
   if (format %in% c("xls", "xlsx", "csv")) {
     #load the file and clean it up
-    tmp <- load_excel(file, skip=skip)
+    tmp <- load_excel(file, skip=skip, sheet=sheet)
     if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
     #For now, I'm going to make a bold assumption that the variable names will stay the
     #same. In the future, I'll need to figure out a way to dynamically identify the
@@ -531,7 +531,7 @@ parse_citibank <- function(file, skip=1) {
   return(dat)
 }
 
-parse_hsbc <- function(file) {
+parse_hsbc <- function(file, skip = 0, sheet="Details") {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -553,23 +553,6 @@ parse_hsbc <- function(file) {
   amount <- tmp$Amount %>% as.numeric() %>% round(., 2)
   amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
   cur <- tmp$ccyCodeCurrency
-  memo <- apply(tmp, 1, function(row) {
-    if (is.na(row['senderBankCorresp'])) {
-      if (is.na(row['receiverBankCorresp'])) {
-        val <- NA
-      } else {
-        val <- paste("Recieving Bank:", row['receiverBankCorresp'])
-      }
-    } else {
-      if (is.na(row['recieverBankCorresp'])) {
-        val <- paste("Sending Bank:", row['senderBankCorresp'])
-      } else {
-        val <- paste("Sending Bank:", row['senderBankCorresp'],
-                     "Recieving Bank:", row['receiverBankCorresp'])
-      }
-    }
-    val
-  })
 
   #If the Beneficiary listed is a bank, HSBC appends data in *Seqb fields.
   #It's possible that the Originator is also listed as a bank, which, to the
@@ -578,6 +561,22 @@ parse_hsbc <- function(file) {
   #way, I need to assign variables based on whether or not the Beneficiary is
   #a bank. The returned value will be a matrix that will need to be transposed.
   vars <- apply(tmp, 1, function(row) {
+    #memo
+    if (is.na(row['senderBankCorresp'])) {
+      if (is.na(row['receiverBankCorresp'])) {
+        memo <- NA
+      } else {
+        memo <- paste("Recieving Bank:", row['receiverBankCorresp'])
+      }
+    } else {
+      if (is.na(row['recieverBankCorresp'])) {
+        memo <- paste("Sending Bank:", row['senderBankCorresp'])
+      } else {
+        memo <- paste("Sending Bank:", row['senderBankCorresp'],
+                     "Recieving Bank:", row['receiverBankCorresp'])
+      }
+    }
+
     #If there's no *Seqb variables, assign as usual
     if (is.na(row['originatorSeqb'])) {
       #originator/beneficiary info
@@ -762,7 +761,8 @@ parse_hsbc <- function(file) {
 
       v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
              "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
-             "beneficiaryAcctNum"=bAcctNum, "beneficiaryAddress"=bAddr, "Beneficiary"=bnf)
+             "beneficiaryAcctNum"=bAcctNum, "beneficiaryAddress"=bAddr,
+             "Beneficiary"=bnf, "memo"=memo)
     }
     return(v)
   })
@@ -778,6 +778,7 @@ parse_hsbc <- function(file) {
   bAcctNum <- vars[, 7]
   bAddr <- vars[, 8]
   bnf <- vars[, 9]
+  memo <- vars[, 10]
 
   dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                     "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
@@ -790,7 +791,7 @@ parse_hsbc <- function(file) {
   return(dat)
 }
 
-parse_jpmc <- function(file) {
+parse_jpmc <- function(file, skip=0, sheet=1) {
   format <- file_ext(file) %>% tolower()
   if (!file.exists(file)) stop("Invalid file path. ",
                                "Please be sure to use the full ",
@@ -799,160 +800,157 @@ parse_jpmc <- function(file) {
                                                           "an Excel file. ",
                                                           "Please use an ",
                                                           "appropriate file.")
+  tmp <- load_excel(file, sheet=sheet) %>% standardize_names()
 
-  #Define parsing function
-  findFlow <- function(row) {
+  #common data
+  date <- tmp$paymentDate %>% as.numeric() %>% as.Date(origin="1899-12-30")
+  amount <- tmp$Amount %>% as.numeric() %>% round(., 2)
+  amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep=".")) %>%
+    str_replace_all(",", "")
+  #It's simply assumed that the currency is in dollars. This might not be right.
+  cur <- "USD"
 
-    #common data
-    date <- row['PaymentDate'] %>% as.Date(format="%m/%d/%Y")
-    amount <- row['Amount'] %>% str_replace_all("[\\$,]", "")
-    amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep=".")) %>%
-      str_replace_all("[\\$,]", "")
-    #It's simply assumed that the currency is in dollars. This might not be right.
-    cur <- "USD"
-    memo <- paste(row['DetPymt1'], row['DetPymt2'],
-                  row['DetPymt3'], row['DetPymt4'], sep=" ") %>%
-      str_replace_all(" NA", "")
+  vars <- apply(tmp, 1, function(row) {
+    memo <- paste(row['detPymt1'], row['detPymt2'], row['detPymt3'], row['detPymt4'], sep=" ") %>%
+      str_replace_all(" NA| NULL", "")
 
-    #originator/beneficiary data
-    #There are edge cases in which the entity is not found in the OrdCust2 field
-    #It is sometimes in the field to the left, so need to check that the field to
-    #the left is an account number and not an entity name. To do this, check the
-    #ratio of numbers to letters in the string. If the entity is in the field to
-    #the left, then the OrdCust1 is often a continuation of that entity's name.
-    #In addition to this issue, OrdCust1 can also be blank, which means the
-    #Originator has an account with JPMC and can be found in the DrAddr1 field.
-    if (is.na(row['OrdCust1'])) {
-      orig <- row['DrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-      oAcctNum <- row['DrId']
-      oAddr <- paste(row['DrAddr2'], row['DrAddr3'], row['DrAddr4'], sep=" ") %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" Na| Null", "")
+    #originator/beneficiary info
+    #There are scenarios in which the originator or the beneficiary is a customer
+    #of JPMC directly and as a result will not be listed in ordCust2, but instead
+    #will be listed in drAddr1.In addition, it is possible that in the ordCust and
+    #acctPty fields that the entity names spill over from the second column to the
+    #first (i.e. ordCust2 spills over into ordCust1). So if the originator or
+    #beneficiary need to be set to these values, we must first check for any spillover.
+    if (is.na(row['ordCust2'])) {
+      orig <- row['drAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAcctNum <- row['drId']
+      oAddr <- paste(row['drAddr2'], row['drAddr3'], row['drAddr4'], collapse=" ") %>%
+        str_replace_all(" NA| NULL", "")
     } else {
-      numberCount <- row['OrdCust1'] %>% str_match_all("\\d") %>% .[[1]] %>% length()
-      ratio <- numberCount / nchar(row['OrdCust1'])
-      if (ratio > 0.60) {
-        orig <- row['OrdCust2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-        oAcctNum <- row['OrdCust1']
+      numberOfDigits <- row['ordCust1'] %>% str_extract_all("[0-9]") %>% .[[1]] %>% length()
+      isAccountNumber <- if (numberOfDigits / nchar(row['ordCust1']) > 0.60) T else F
+      if (isAccountNumber) {
+        orig <- row['ordCust2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oAcctNum <- row['ordCust1']
+        oAddr <- paste(row['ordCust3'], row['ordcust4'], collapse=" ") %>%
+          str_replace_all(" NA| NULL", "")
       } else {
-        orig <- paste(row['OrdCust1'], row['OrdCust2'], sep="") %>%
-          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        orig <- paste(row['ordCust1'], row['ordCust2'], collapse="")
         oAcctNum <- NA
+        oAddr <- paste(row['ordCust3'], row['ordcust4'], collapse=" ") %>%
+          str_replace_all(" NA| NULL", "")
       }
-      oAddr <- paste(row['OrdCust3'], row['OrdCust4'], collapse=" ") %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" Na| Null", "")
     }
-    #The Beneficiary can be in one of two fields: AcctPty or UltBene. The
-    #Beneficiary is in the UltBene field if the AcctPty field is a bank. In this
-    #situation, that most likely means there is a second intermediary bank.
-    #So let's introduce some logic to check for that. In addition, the same issue
-    #that was mentioned above with Originator can happen here, so check for that
-    #as well.
-    if (is.na(row['UltBene2'])) {
-      numberCount <- row['AcctPty1'] %>% str_match_all("\\d") %>% .[[1]] %>% length()
-      ratio <- numberCount / nchar(row['AcctPty1'])
-      if (ratio > 0.60) {
-        bnf <- row['AcctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-        bAcctNum <- row['AcctPty1']
+
+    #For the beneficiary, the acctPty2 variable can be empty while the utlBene2
+    #field is populated. So need to check both.
+    if (is.na(row['acctPty2']) && is.na(row['ultBene2'])) {
+      bnf <- row['crAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAcctNum <- row['crId']
+      bAddr <- paste(row['crAddr2'], row['crAddr3'], row['crAddr4'], collapse=" ") %>%
+        str_replace_all(" NA| NULL", "")
+    } else if (is.na(row['ultBene2'])) {
+      numberOfDigits <- row['acctPty1'] %>% str_extract_all("[0-9]") %>% .[[1]] %>% length()
+      isAccountNumber <- if (numberOfDigits / nchar(row['acctPty1']) > 0.60) T else F
+      if (isAccountNumber) {
+        bnf <- row['acctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bAcctNum <- row['acctPty1']
       } else {
-        bnf <- paste(row['AcctPty1'], row['AcctPty2'], sep="") %>%
+        bnf <- paste(row['acctPty1'], row['acctPty2'], collapse="") %>%
           gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         bAcctNum <- NA
       }
-      bAddr <- paste(row['AcctPty3'], row['AcctPty4'], row['AcctyPty5'], sep=" ") %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" Na| Null", "")
+      bAddr <- paste(row['acctPty3'], row['acctPty4'], row['acctPty5'], collapse=" ") %>%
+        str_replace_all(" NA| NULL", "")
     } else {
-      numberCount <- row['UltBene1'] %>% str_match_all("\\d") %>% .[[1]] %>% length()
-      ratio <- numberCount / nchar(row['UltBene1'])
-      if (ratio > 0.60) {
-        bnf <- row['UltBene2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-        bAcctNum <- row['UltBene1']
+      numberOfDigits <- row['ultBene1'] %>% str_extract_all("[0-9]") %>% .[[1]] %>% length()
+      isAccountNumber <- if (numberOfDigits / nchar(row['ultBene1']) > 0.60) T else F
+      if (isAccountNumber) {
+        bnf <- row['ultBene2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bAcctNum <- row['ultBene1']
       } else {
-        bnf <- paste(row['UltBene1'], row['UltBene2'], sep="") %>%
+        bnf <- paste(row['ultBene1'], row['ultBene2'], collapse="") %>%
           gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         bAcctNum <- NA
       }
-      bAddr <- paste(row['UltBene3'], row['UltBene4'], row['UltBene5'], sep=" ") %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" Na| Null", "")
+      bAddr <- paste(row['ultBene3'], row['ultBene4'], row['ultBene5'], collapse=" ") %>%
+        str_replace_all(" NA| NULL", "")
     }
 
     #bank info
-    #The bank info gets a bit complicated with JPMC, but essentially the DrAddr
-    #and CrAddr fields are who JPMC debited and credited, respectively. As a result,
-    #the DrAddr and CrAddr fields are almost always banks, but can be entities if those
-    #entities have accounts at JPMC. Aside from that, if an Originator's bank does not
-    #have a relationship with JPMC, it will go through another bank, which will then be
-    #listed in the OrdBank field. Same with the Beneficiary's bank, except that bank will
-    #be listed in the AcctPty field. To ensure accuracy, start with the Originator and
-    #work through the flow of funds to get all banks.
-    if (is.na(row['OrdCust2'])) {
+    #If the Originator is set to crId then Originator Bank should be JPMC. Same with the
+    #beneficiary. From there, work from Originator to Beneficiary to determine the
+    #Intermediary Bank.
+    if (is.na(row['ordCust2'])) {
       oBank <- "JPMorgan Chase"
+    } else if (is.na(row['ordBank1'])) {
+      oBank <- row['drAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     } else {
-      if (is.na(row['OrdBank1'])) {
-        oBank <- row['DrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-      } else {
-        oBank <- row['OrdBank1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-        iBank <- row['DrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-      }
+      oBank <- row['ordBank1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      diBank <- row['drAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     }
-    if (is.na(row['AcctPty2']) & is.na(row['UltBene2'])) {
+
+    if (is.na(row['acctPty2']) && is.na(row['ultBene2'])) {
       bBank <- "JPMorgan Chase"
-    } else if (any(is.na(row['AcctPty2']), is.na(row['UltBene2']))) {
-      bBank <- row['CrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    } else {
-      bBank <- row['AcctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-      if (!exists("iBank")) {
-        iBank <- row['CrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    } else if (!is.na(row['acctPty2']) && !is.na(row['ultBene2'])) {
+      numberOfDigits <- row['acctPty1'] %>% str_extract_all("[0-9]") %>% .[[1]] %>% length()
+      isAccountNumber <- if (numberOfDigits / nchar(row['acctPty2']) > 0.60) T else F
+      if (isAccountNumber) {
+        bBank <- row['acctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       } else {
-        ib2 <- row['CrAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-        iBank <- paste(iBank, "JPMorgan Chase", ib2, sep=", ")
+        bBank <- paste(row['acctPty1'], row['acctPty2'], collapse="") %>%
+          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       }
-    }
-    if (!exists("iBank")) {
-      iBank <- "JPMorgan Chase"
+      ciBank <- row['crAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     } else {
-      if (!grepl("JPMorgan Chase", iBank)) iBank %<>% c(., "JPMorgan Chase")
+      bBank <- row['crAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
     }
 
-    dataRow <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
-                          "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
-                          "originatorBank"=oBank, "intermediaryBank"=iBank,
-                          "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
-                          "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
-                          stringsAsFactors=F)
-  }
-
-  if (format %in% c("xls", "xlsx")) {
-    functionName <- paste("readxl", format, "sheets", sep="_")
-    sheetNames <- .Call(functionName, PACKAGE="readxl", file)
-    for (sheetName in sheetNames) {
-      tmp <- read_excel(file, sheet=sheetName)
-      #cleanup
-      names(tmp) %<>% str_replace_all("_", " ") %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" ", "")
-      tmp$OrdCust1 %<>% str_replace_all("^/", "")
-      tmp$AcctPty1 %<>% str_replace_all("^/", "")
-      tmp$CrId %<>% str_replace_all("^/", "")
-      tmp$DrId %<>% str_replace_all("^/", "")
-      tmp$UltBene1 %<>% str_replace_all("^/", "")
-      dat_m <- do.call(rbind, apply(tmp, 1, function(row) findFlow(row)))
+    if (exists("diBank") && exists("ciBank")) {
+      if (oBank != "JPMorgan Chase" && bBank != "JPMorgan Chase") {
+        iBank <- paste(diBank, "JPMorgan Chase", ciBank, sep=", ")
+      } else {
+        iBank <- paste(diBank, ciBank, sep=", ")
+      }
+    } else if (!exists("diBank") && !exists("ciBank")) {
+      if (oBank != "JPMorgan Chase" && bBank != "JPMorgan Chase") {
+        iBank <- "JPMorgan Chase"
+      } else {
+        iBank <- NA
+      }
+    } else if (!exists("diBank")) {
+      iBank <- paste("JPMorgan Chase", ciBank, sep=", ")
+    } else {
+      iBank <- paste(diBank, "JPMorgan Chase", sep=", ")
     }
-  } else {
-    tmp <- read_csv(file)
-    names(tmp) %<>% str_replace_all("_", " ") %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all(" ", "")
-    tmp$OrdCust1 %<>% str_replace_all("^/", "")
-    tmp$AcctPty1 %<>% str_replace_all("^/", "")
-    tmp$CrId %<>% str_replace_all("^/", "")
-    tmp$DrId %<>% str_replace_all("^/", "")
-    tmp$UltBene1 %<>% str_replace_all("^/", "")
-    dat_m <- do.call(rbind, apply(tmp, 1, findFlow()))
-  }
+
+    v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+           "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
+           "beneficiaryAcctNum"=bAcctNum, "beneficiaryAddress"=bAddr,
+           "Beneficiary"=bnf, "memo"=memo)
+
+    return(v)
+  })
+
+  vars <- t(vars)
+
+  orig <- vars[, 1]
+  oAddr <- vars[, 2]
+  oAcctNum <- vars[, 3]
+  oBank <- vars[, 4]
+  iBank <- vars[, 5]
+  bBank <- vars[, 6]
+  bAcctNum <- vars[, 7]
+  bAddr <- vars[, 8]
+  bnf <- vars[, 9]
+  memo <- vars[, 10]
+
+  dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
+                    "Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+                    "originatorBank"=oBank, "intermediaryBank"=iBank,
+                    "beneficiaryBank"=bBank, "benficiaryAcctNum"=bAcctNum,
+                    "beneficiaryAddress"=bAddr, "Beneficiary"=bnf, "Memo"=memo,
+                    stringsAsFactors=F)
 
   dat %<>% clean_entities()
   return(dat)
