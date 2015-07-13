@@ -5,7 +5,6 @@ library(dplyr)
 library(magrittr)
 library(stringr)
 library(stringdist)
-library(rPython)
 
 setwd("~/Documents/wireParser/")
 #Ensure that large amounts of money are not recorded in scientific notation or rounded
@@ -616,8 +615,11 @@ parse_hsbc <- function(file) {
       #There have been edge cases where the Debit Party and Beneficiary are the same value
       #and as a result HSBC is listed no where in the record. Need to rememdy this.
       if (bnf == bBank) {
-        if (!grepl("hsbc", c(oBank, bBank, iBank), ignore.case=T)) {
+        hsbcFlag <- grepl("hsbc", c(oBank, bBank, iBank), ignore.case=T) %>% sum() > 0
+        if (hsbcFlag) {
           bBank <- "HSBC"
+        } else {
+          bBank <- "Unknown"
         }
       }
       v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
