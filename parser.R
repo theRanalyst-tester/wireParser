@@ -523,8 +523,12 @@ parse_hsbc <- function(file) {
   tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
 
   #common data
-  date <- tmp$transactionDate %>% as.Date(format="%m/%d/%Y")
-  amount <- tmp$Amount
+  #Becuase we're reading the data in as character vales, it'll be read as the number of days
+  #since epoch. Excel is a bit dumb though and treated 1900 as a leap year when it wasn't.
+  #So need to set the origin back a couple days. Some tweaking will need to be done if I want
+  #to make this usable with Mac spreadsheet files.
+  date <- tmp$transactionDate %>% as.numeric %>% as.Date(origin="1899-12-30")
+  amount <- tmp$Amount %>% as.numeric() %>% round(., 2)
   amount <- ifelse(grepl("\\.", amount), amount, paste(amount, "00", sep="."))
   cur <- tmp$ccyCodeCurrency
   memo <- apply(tmp, 1, function(row) {
