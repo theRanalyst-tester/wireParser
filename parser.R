@@ -87,22 +87,27 @@ load_excel <- function(file, sheet=1, skip=0, colNames=T) {
     tmp <- read_csv(file, col_types=colTypes, col_names=colNames, skip=skipNumber)
   } else {
     #check for sheet name in sheet names
-    functionName <- paste("readxl", format, "sheets", sep="_")
-    sheetNames <- .Call(functionName, PACKAGE="readxl", file)
-    while (!sheet %in% sheetNames) {
-      sheet <- readline(prompt="What is the name of the data sheet? ")
+    sheetNames <- excel_sheets(file)
+    if (length(sheetNames) > 1) {
+      if (is.numeric(sheet)) sheet <- sheetNames[sheet]
+      while (!sheet %in% sheetNames) {
+        sheet <- readline(prompt="What is the name of the sheet with the data? ")
+      }
+      sheetIndex <- which(sheetNames == sheet)
+    } else {
+      sheetIndex <- 1
     }
-    #get number of columns and create a vector of column types
-    sheetIndex <- which(sheetNames == sheet)
     if (colNames) {
+      #get number of columns and create a vector of column types
       functionName <- paste("readxl", format, "col_names", sep="_")
-      colNames <- .Call(functionName, PACKAGE = 'readxl', file, sheetIndex, skip)
+      #C++ starts counting at 0, not 1
+      colNames <- .Call(functionName, PACKAGE = 'readxl', file, sheetIndex - 1, skip)
       n <- length(colNames)
       colTypes <- rep("text", n)
-      tmp <- read_excel(file, col_types=colTypes, sheet=sheet, skip=skip)
+      tmp <- read_excel(file, col_types=colTypes, sheet=sheetIndex, skip=skip)
     } else {
       #This is for files like those from Bank of New York Mellon
-      tmp <- read_excel(file, sheet, col_names=F)
+      tmp <- read_excel(file, sheet=sheetIndex, col_names=F)
     }
   }
   tmp
@@ -370,70 +375,72 @@ parse_citibank <- function(file, skip=1) {
   }
   if (format %in% c("xls", "xlsx", "csv")) {
     #load the file and clean it up
-    tmp <- load_excel(file, skipNumber=skip)
+    tmp <- load_excel(file, skip=skip)
     if (ncol(tmp) != 12) tmp <- tmp[, 1:12]
     #For now, I'm going to make a bold assumption that the variable names will stay the
     #same. In the future, I'll need to figure out a way to dynamically identify the
     #appropriate names. But that's probably true for all of these files...
-    names(tmp) <- c("globalID", "instructionDate", "originator", "originatorBank",
+    names(tmp) <- c("globalID", "instructionDate", "Originator", "originatorBank",
                     "dbOrInterParty", "debitedParty", "creditedParty", "crOrInterParty",
-                    "beneficiaryBank", "beneficiary","amount", "OBI")
+                    "beneficiaryBank", "Beneficiary","Amount", "OBI")
     tmp <- apply(tmp, 2, function(z) ifelse(z %in% c("()", " "), NA, z)) %>%
       as.data.frame(stringsAsFactors=F)
     tmp %<>% filter(rowSums(is.na(.)) != ncol(.))
 
     #common data
-    date <- tmp$instructionDate
-    amount <- tmp$amount
+    date <- tmp$instructionDate %>% as.numeric() %>% as.Date(origin="1899-12-30")
+    amount <- tmp$Amount %>% as.numeric() %>% round(., 2)
     cur <- "USD"
     memo <- tmp$OBI %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
 
-    #originator/beneficiary info
-    orig <- tmp$originator %>% str_replace("\\s+\\(.*\\)", "") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    oAddr <- NA
-    oAcctNum <- str_extract(tmp$originator, "(?<=\\s{1,10})\\(.*\\)") %>%
-      str_replace_all("\\(|\\)", "")
-    bnf <- tmp$beneficiary %>% str_replace("\\s+\\(.*\\)", "") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-    bAddr <- NA
-    bAcctNum <- str_extract(tmp$beneficiary, "(?<=\\s{1,10})\\(.*\\)") %>%
-      str_replace_all("\\(|\\)", "")
+    vars <- apply(tmp, 1, function(row) {
+      #originator/beneficiary info
+      orig <- row['Originator'] %>% str_replace("\\s+\\(.*\\)", "") %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oAddr <- NA
+      oAcctNum <- row['Originator'] %>% str_extract("(?<=\\s{1,10})\\(.*\\)") %>%
+        str_replace_all("\\(|\\)", "")
+      bnf <- row['Beneficiary'] %>% str_replace("\\s+\\(.*\\)", "") %>%
+        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bAddr <- NA
+      bAcctNum <- row['Beneficiary'] %>% str_extract("(?<=\\s{1,10})\\(.*\\)") %>%
+        str_replace_all("\\(|\\)", "")
 
-    #bank info
-    oBank <- apply(tmp, 1, function(row) {
+      #bank info
       if (is.na(row['originatorBank'])) {
         oBank <- "Citibank"
       } else {
         oBankValues <- row['originatorBank'] %>% str_split("\\(") %>%
           .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
         swiftFlag <- oBankValues[1] == oBankValues[2]
-        if (swiftFlag) oBank <- row['dbOrInterParty'] else oBank <- row['originatorBank']
+        if (swiftFlag) {
+          oBank <- row['dbOrInterParty']
+        } else {
+          oBank <- row['originatorBank']
+        }
       }
-      oBank
-    })
-    oBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
-      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-      str_replace_all("^\\s+|\\s+$", "")
+      oBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
 
-    bBank <- apply(tmp, 1, function(row) {
       if (is.na(row['beneficiaryBank'])) {
         bBank <- "Citibank"
       } else {
         bBankValues <- row['beneficiaryBank'] %>% str_split("\\(") %>%
           .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
         swiftFlag <- bBankValues[1] == bBankValues[2]
-        if (swiftFlag) bBank <- row['crOrInterParty'] else bBank <- row['beneficiaryBank']
+        if (swiftFlag) {
+          bBank <- row['crOrInterParty']
+        } else {
+          bBank <- row['beneficiaryBank']
+        }
       }
-      bBank
-    })
-    bBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
-      gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-      str_replace_all("^\\s+|\\s+$", "")
+      bBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
+        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+        str_replace_all("^\\s+|\\s+$", "")
 
-    #Account for when DB/CR or Inter Party is different from the Orig/Benef Bank
-    #and the Orig/Benef bank is not a SWIFT code
-    dbi <- apply(tmp, 1, function(row) {
+      #Account for when DB/CR or Inter Party is different from the Orig/Benef Bank
+      #and the Orig/Benef bank is not a SWIFT code
       if (!is.na(row['dbOrInterParty'])) {
         dbiValue <- row['dbOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
           str_replace_all("^\\s+|\\s+$", "") %>% tolower()
@@ -445,17 +452,14 @@ parse_citibank <- function(file, skip=1) {
           oBankValues <- row['originatorBank'] %>% str_split("\\(") %>%
             .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
           swiftFlag <- oBankValues[1] == oBankValues[2]
-          if (!swiftFlag) iBank <- dbiValue else iBank <- NA
+          if (!swiftFlag) dbi <- dbiValue else dbi <- NA
         } else {
-          iBank <- NA
+          dbi <- NA
         }
       } else {
-        iBank <- NA
+        dbi <- NA
       }
-      iBank
-    })
-    dbi %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-    cri <- apply(tmp, 1, function(row) {
+      dbi %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
       if (!is.na(row['crOrInterParty'])) {
         criValue <- row['crOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
           str_replace_all("^\\s+|\\s+$", "")
@@ -465,36 +469,52 @@ parse_citibank <- function(file, skip=1) {
           bBankValues <- row['beneficiaryBank'] %>% str_split("\\(") %>%
             .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
           swiftFlag <- bBankValues[1] == bBankValues[2]
-          if (!swiftFlag) iBank <- criValue else iBank <- NA
+          if (!swiftFlag) cri <- criValue else cri <- NA
         } else {
-          iBank <- NA
+          cri <- NA
         }
       } else {
-        iBank <- NA
+        cri <- NA
       }
-      iBank
-    })
-    cri %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
-    dbiFlag <- !is.na(dbi)
-    criFlag <- !is.na(cri)
-    iBank <- ifelse(dbiFlag & criFlag, "Need to reconcile", ifelse(dbiFlag, dbi, cri))
+      cri %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      dbiFlag <- !is.na(dbi)
+      criFlag <- !is.na(cri)
+      iBank <- ifelse(dbiFlag & criFlag, "Need to reconcile", ifelse(dbiFlag, dbi, cri))
 
-    #Check if Citibank is any of the 2-3 banks we've established, and if not
-    #then set it as an intermediate bank
-    bBankFlag <- grepl("Citi\\s?bank", bBank, ignore.case=T)
-    oBankFlag <- grepl("Citi\\s?bank", oBank, ignore.case=T)
-    iBankFlag <- grepl("Citi\\s?bank", iBank, ignore.case=T)
-    iBankNA <- is.na(iBank)
-    iBank <- sapply(1:length(iBankFlag), function(idx) {
-      if (!any(bBankFlag[idx], oBankFlag[idx], iBankFlag[idx])) {
-        if (iBankNA[idx]) val <- "Citibank" else val <- paste(iBank[idx], "Citibank", sep=", ")
-      } else {
-        val <- iBank[idx]
-      }
-      val
+      #Check if Citibank is any of the 2-3 banks we've established, and if not
+      #then set it as an intermediate bank
+      bBankFlag <- grepl("Citi\\s?bank", bBank, ignore.case=T)
+      oBankFlag <- grepl("Citi\\s?bank", oBank, ignore.case=T)
+      iBankFlag <- grepl("Citi\\s?bank", iBank, ignore.case=T)
+      iBankNA <- is.na(iBank)
+      iBank <- sapply(1:length(iBankFlag), function(idx) {
+        if (!any(bBankFlag[idx], oBankFlag[idx], iBankFlag[idx])) {
+          if (iBankNA[idx]) val <- "Citibank" else val <- paste(iBank[idx], "Citibank", sep=", ")
+        } else {
+          val <- iBank[idx]
+        }
+        val
+      })
+      #For now, I'm going to ignore the Debited Party and Credited Party fields
+      #as I think they're useless
+      v <- c("Originator"=orig, "originatorAddress"=oAddr, "originatorAcctNum"=oAcctNum,
+             "originatorBank"=oBank, "intermediateBank"=iBank, "beneficiaryBank"=bBank,
+             "beneficiaryAcctNum"=bAcctNum, "beneficiaryAddress"=bAddr, "Beneficiary"=bnf)
+      return(v)
     })
-    #For now, I'm going to ignore the Debited Party and Credited Party fields
-    #as I think they're useless
+
+    vars <- t(vars)
+
+    orig <- vars[, 1]
+    oAddr <- vars[, 2]
+    oAcctNum <- vars[, 3]
+    oBank <- vars[, 4]
+    iBank <- vars[, 5]
+    bBank <- vars[, 6]
+    bAcctNum <- vars[, 7]
+    bAddr <- vars[, 8]
+    bnf <- vars[, 9]
+
     dat <- data.frame("Date"=date, "Amount"=amount, "Currency"=cur,
                       "Originator"=orig, "originatorAddress"=oAddr,
                       "originatorAcctNum"=oAcctNum,
