@@ -105,15 +105,17 @@ load_excel <- function(file, sheet=1, skip=0, colNames=T) {
       tmp <- read_excel(file, sheet, col_names=F)
     }
   }
-  names(tmp) %<>% str_replace_all("_", " ") %>%
+  tmp
+}
+
+standardize_names <- function(data) {
+  names(data) %<>% str_replace_all("_", " ") %>%
     str_trim() %>%
     gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
     str_replace_all("\\s?/\\s?", " ") %>%
-    str_replace_all(" ", "")
-  #want variables names to be camel case if they're more than one word, otherwise capitalized
-  names(tmp) %<>% gsub("^([A-Z])(?=[a-z]+[A-Z])", "\\L\\1", ., perl=T)
-
-  return(tmp)
+    str_replace_all(" ", "") %>%
+    gsub("^([A-Z])(?=[a-z]+[A-Z])", "\\L\\1", ., perl=T)
+  data
 }
 
 parse_boa <- function(file) {
