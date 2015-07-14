@@ -13,10 +13,11 @@ options(digits=15)
 
 clean_entities <- function(data) {
   #Add some cleanup logic for entities and banks
-  data$Originator %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
+  data$Originator %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_trim() %>%
+    str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
     str_replace_all("\\(.*\\)", "") %>%
     str_replace_all("[\\.,]", "") %>%
-    str_trim() %>%
     gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
     gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
     str_replace_all("\\bCO$", "Corporation") %>%
@@ -26,10 +27,11 @@ clean_entities <- function(data) {
     str_replace_all("^\\d/", "") %>%
     str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
     str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
-  data$Beneficiary %<>% str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
+  data$Beneficiary %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_trim() %>%
+    str_replace_all("(?<=Llc\\b|Inc\\b|Ltd\\b|Co\\b).*", "") %>%
     str_replace_all("\\(.*\\)", "") %>%
     str_replace_all("[\\.,]", "") %>%
-    str_trim() %>%
     gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
     gsub("^([A-z]{2,3})\\b", "\\U\\1", ., perl=T) %>%
     str_replace_all("\\bCO$", "Corporation") %>%
@@ -40,6 +42,7 @@ clean_entities <- function(data) {
     str_replace_all("(?<=\\w)\\d/(?=\\w)", ", ") %>%
     str_replace_all("(?<=\\b\\w)\\s(?=\\w\\b)", "")
   data$originatorBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_trim() %>%
     str_replace_all("Jpmorgan", "JPMorgan") %>%
     str_replace_all("Hsbc", "HSBC") %>%
     gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
@@ -52,6 +55,7 @@ clean_entities <- function(data) {
     str_replace_all("LTD|Ltd|ltd", "Limited") %>%
     str_replace_all("\\.,", "")
   data$intermediaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_trim() %>%
     str_replace_all("Jpmorgan", "JPMorgan") %>%
     str_replace_all("Hsbc", "HSBC") %>%
     gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
@@ -64,6 +68,7 @@ clean_entities <- function(data) {
     str_replace_all("LTD|Ltd|ltd", "Limited") %>%
     str_replace_all("\\.", "")
   data$beneficiaryBank %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
+    str_trim() %>%
     str_replace_all("Jpmorgan", "JPMorgan") %>%
     str_replace_all("Hsbc", "HSBC") %>%
     gsub("\\b([A-z]{2,3})$", "\\U\\1", ., perl=T) %>%
@@ -75,6 +80,11 @@ clean_entities <- function(data) {
     str_replace_all("PTY|Pty|pty", "Proprietary") %>%
     str_replace_all("LTD|Ltd|ltd", "Limited") %>%
     str_replace_all("\\.,", "")
+  data$Memo %<>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>% str_trim()
+  data$originatorAddress %<>% str_replace_all("(\\w,)(\\w)", "\\1 \\2") %>%
+    gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>% str_trim()
+  data$beneficiaryAddress %<>% str_replace_all("(\\w,)(\\w)", "\\1 \\2") %>%
+    gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T) %>% str_trim()
 
   return(data)
 }
@@ -158,8 +168,7 @@ parse_boa <- function(file) {
     #common OCR mistake is confusing "USD" with "USO", so replace that
     cur <- ifelse(cur == "USO", "USD", cur)
     MIDX <- grep("ORIG TO BNF INFO:", textBlock, ignore.case=T)[1] + 1
-    memo <- textBlock[MIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-      gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    memo <- textBlock[MIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2]
 
     #BoA Wires have a different format depending on whether a customer received a wire or sent one.
     #If a BoA customer *sends* a wire, it will say "**** CREDIT PAYMENT MESSAGE TEXT ****" on the wire.
@@ -170,39 +179,32 @@ parse_boa <- function(file) {
 
       OBIDX <- grep("Sending Bank:", messageBlock, ignore.case=T)[1] + 3
       oBank <- messageBlock[OBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-        str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        str_split(., "\\s{2,}") %>% unlist() %>% .[2]
       BBIDX <- grep("Receiving Bank:", messageBlock, ignore.case=T)[1] + 3
       bBank <- messageBlock[BBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-        str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        str_split(., "\\s{2,}") %>% unlist() %>% .[2]
       if (any(grepl("Beneficiary's Bank", messageBlock, ignore.case=T))) {
         iBank <- bBank
         BBIDX <- grep("Beneficiary's Bank", messageBlock, ignore.case=T)[1] + 1
-        bBank <- messageBlock[BBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-          gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bBank <- messageBlock[BBIDX]
       } else {
         iBank <- NA
       }
       BIDX <- grep("Beneficiary:", messageBlock, ignore.case=T)[1] + 1
-      bnf <- messageBlock[BIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- messageBlock[BIDX]
       bAddr <- textBlock[(BIDX+1):(BIDX+2)] %>% paste(., collapse=" ")
       OIDX <- grep("Originator:", messageBlock, ignore.case=T) + 1
-      orig <- messageBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      orig <- messageBlock[OIDX]
       oAddr <- textBlock[(OIDX+1):(OIDX+2)] %>% paste(., collapse=" ")
     } else {
       bBank <- "Bank of America"
       OBIDX <- grep("DEBIT VAL:\\s?../../..", textBlock, ignore.case=T)[1] + 1
-      bnf <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2] %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[2]
       bAddr <- textBlock[(OBIDX+1):(OBIDX+2)] %>% str_split(., "\\s{3,}") %>%
         unlist() %>% .[c(2, 4)] %>% paste(., collapse=" ")
       OIDX <- grep("ORIG:\\s*/\\s*[A-Z0-9]+", textBlock, ignore.case=T)[1] + 1
       orig <- textBlock[OIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-        str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        str_split(., "\\s{2,}") %>% unlist() %>% .[1]
       oAddr <- textBlock[(OIDX+1):(OIDX+2)] %>%
         str_split(., "\\s{3,}") %>% unlist()
       if (length(oAddr) > 2) {
@@ -210,13 +212,11 @@ parse_boa <- function(file) {
       } else {
         oAddr %<>% paste(., collapse=" ")
       }
-      oBank <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[1] %>%
-        gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oBank <- textBlock[OBIDX] %>% str_split(., "\\s{2,}") %>% unlist() %>% .[1]
       if (any(grepl("ORDERING BNK:", textBlock, ignore.case=T))) {
         iBank <- oBank
         OBIDX <- grep("ORDERING BNK:", textBlock, ignore.case=T)[1] + 1
-        oBank <- textBlock[OBIDX] %>% gsub("^\\s+|\\s+$", "", .) %>%
-          gsub("([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        oBank <- textBlock[OBIDX]
       } else {
         iBank <- NA
       }
@@ -294,13 +294,11 @@ parse_capone <- function(file) {
     #common OCR mistake is confusing "USD" with "USO", so replace that
     cur[cur == "USO"] <- "USD"
     MIDX <- grep("^OBI\\s+", textBlock)[1]
-    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10}).*")
 
     #originator/beneficiary info
     OIDX <- grep("^Originator", textBlock, ignore.case=T)[1]
-    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10}).*")
     OAIDX <- grep("ORG ADDR", textBlock)[1]
     oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ") %>%
       str_replace_all("ORG ADDR\\d", "")
@@ -310,8 +308,7 @@ parse_capone <- function(file) {
     oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10}).*")
 
     BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
-    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10}).*")
     BAIDX <- grep("^BNF ADDR", textBlock)[1]
     bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ") %>%
       str_replace_all("BNF ADDR\\d", "")
@@ -322,23 +319,17 @@ parse_capone <- function(file) {
     #There is no "Orig Bank" field, but Sender Name appears to be the
     #field we're looking for.
     OBIDX <- grep("^Sender Name", textBlock, ignore.case=T)[1]
-    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-
+    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10}).*")
     BBIDX <- grep("^Bene Bank", textBlock, ignore.case=T)[1]
-    bBank <- str_extract(textBlock[BBIDX], "(?<=Bene Bank\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-
+    bBank <- str_extract(textBlock[BBIDX], "(?<=Bene Bank\\s{1,10}).*")
     IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
-    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10}).*")
 
     #There is a fourth bank field called Recv Name. This field appears to never
     #be blank, but Bene Bank and Intermd Bank can be, so need to set this field
     #and then run some logic.
     RBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
-    rBank <- str_extract(textBlock[RBIDX], "(?<=Recv Name\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    rBank <- str_extract(textBlock[RBIDX], "(?<=Recv Name\\s{1,10}).*")
     #There are two possibilities: 1) Recv Bank is the Intermediary Bank or
     # 2) it's the Beneficiary Bank. Because Recv Bank appears to never be empty,
     #I'm assuming that it is the actual beneficiary bank.
@@ -391,17 +382,15 @@ parse_citibank <- function(file, skip=1, sheet=1) {
     date <- tmp$instructionDate %>% as.numeric() %>% as.Date(origin="1899-12-30")
     amount <- tmp$Amount %>% as.numeric() %>% round(., 2)
     cur <- "USD"
-    memo <- tmp$OBI %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+    memo <- tmp$OBI
 
     vars <- apply(tmp, 1, function(row) {
       #originator/beneficiary info
-      orig <- row['Originator'] %>% str_replace("\\s+\\(.*\\)", "") %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      orig <- row['Originator'] %>% str_replace("\\s+\\(.*\\)", "")
       oAddr <- NA
       oAcctNum <- row['Originator'] %>% str_extract("(?<=\\s{1,10})\\(.*\\)") %>%
         str_replace_all("\\(|\\)", "")
-      bnf <- row['Beneficiary'] %>% str_replace("\\s+\\(.*\\)", "") %>%
-        gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- row['Beneficiary'] %>% str_replace("\\s+\\(.*\\)", "")
       bAddr <- NA
       bAcctNum <- row['Beneficiary'] %>% str_extract("(?<=\\s{1,10})\\(.*\\)") %>%
         str_replace_all("\\(|\\)", "")
@@ -419,9 +408,7 @@ parse_citibank <- function(file, skip=1, sheet=1) {
           oBank <- row['originatorBank']
         }
       }
-      oBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
+      oBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "")
 
       if (is.na(row['beneficiaryBank'])) {
         bBank <- "Citibank"
@@ -435,9 +422,7 @@ parse_citibank <- function(file, skip=1, sheet=1) {
           bBank <- row['beneficiaryBank']
         }
       }
-      bBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "") %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
+      bBank %<>% str_replace_all("\\(.*\\)|\\s{2,}", "")
 
       #Account for when DB/CR or Inter Party is different from the Orig/Benef Bank
       #and the Orig/Benef bank is not a SWIFT code
@@ -462,9 +447,9 @@ parse_citibank <- function(file, skip=1, sheet=1) {
       dbi %<>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
       if (!is.na(row['crOrInterParty'])) {
         criValue <- row['crOrInterParty'] %>% str_replace_all("\\(.*\\)", "") %>%
-          str_replace_all("^\\s+|\\s+$", "")
+          str_replace_all("^\\s+|\\s+$", "") %>% tolower()
         beneBankValue <- row['beneficiaryBank'] %>% str_replace_all("\\(.*\\)", "") %>%
-          str_replace_all("^\\s+|\\s+$", "")
+          str_replace_all("^\\s+|\\s+$", "") %>% tolower()
         if (stringdist(criValue, beneBankValue)/nchar(criValue) > 1/3) {
           bBankValues <- row['beneficiaryBank'] %>% str_split("\\(") %>%
             .[[1]] %>% str_replace_all("[\\s{2,}\\)]", "")
@@ -581,7 +566,7 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
     if (is.na(row['originatorSeqb'])) {
       #originator/beneficiary info
       origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
-      orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      orig <- origField[2]
       oAcctNum <- origField[1]
       if (length(origField) >= 3) {
         oAddr <- origField %>% .[3:length(.)] %>%
@@ -591,7 +576,7 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
         oAddr <- NA
       }
       bnfField <- row['Beneficiary'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
-      bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- bnfField[2]
       bAcctNum <- bnfField[1]
       if (length(bnfField) >= 3) {
         bAddr <- bnfField %>% .[3:length(.)] %>%
@@ -604,22 +589,17 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
       #bank info
       #Originator Bank can be empty, so if that's the case set it to be the debit party.
       if (is.na(row['originatorBank'])) {
-        oBank <- row['DebitParty'] %>%
-          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-          str_replace_all("^\\s+|\\s+$", "")
+        oBank <- row['DebitParty']
       } else {
         #Sometimes only the SWIFT code is included in a Bank field so the bank comes
         #back as NA. In this case, set it as the SWIFT code and will replace later.
-        oBank <- row['originatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-          str_replace_all("^\\s+|\\s+$", "")
+        oBank <- row['originatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2]
         if (is.na(oBank)) oBank <- row['originatorBank'] %>% str_split("\\s{3}") %>%
-          .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
+          .[[1]] %>% .[1]
       }
       #BeneficiaryBank is always empty, so set it to Credit Party.
       #Credit Party has been blank in some instances. In this case, set it to "Unknown".
-      bBank <- row['creditParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
+      bBank <- row['creditParty']
       if (is.na(bBank)) bBank <- "Unknown"
 
       #There are two possibilities for the intermediary bank if Originator Bank is
@@ -632,8 +612,7 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
         if (grepl(dpValue, obValue, fixed=T)) {
           iBank <- NA
         } else {
-          iBank <- row['debitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-            str_replace_all("^\\s+|\\s$", "")
+          iBank <- row['debitParty']
         }
       }
 
@@ -658,7 +637,7 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
       #a bank and should be reset to the actual entity.
       if (row['Originator'] == row['originatorSeqb']) {
         origField <- row['Originator'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
-        orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        orig <- origField[2]
         oAcctNum <- origField[1]
         if (length(origField) >= 3) {
           oAddr <- origField %>% .[3:length(.)] %>%
@@ -670,13 +649,11 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
         #There are some instances where Originator Bank are NA. In this event, use the
         #Debit party as the Originator Bank
         if (is.na(row['originatorBank'])) {
-          oBank <- row['debitParty'] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+          oBank <- row['debitParty']
         } else {
-          oBank <- row['originatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-            gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-            str_replace_all("^\\s+|\\s+$", "")
+          oBank <- row['originatorBank'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2]
           if (is.na(oBank)) oBank <- row['originatorBank'] %>% str_split("\\s{3}") %>%
-            .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
+            .[[1]] %>% .[1]
         }
         #There are four possibilities for the Intermediary Bank if Originator Bank
         #is not empty: 1) Credit Party 2) Debit Party 3) Both or 4) Neither
@@ -688,8 +665,7 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
           if (grepl(cpValue, bbValue, fixed=T)) {
             iBank <- NA
           } else {
-            iBank <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-              str_replace_all("^\\s+|\\s+$", "")
+            iBank <- cpValue
           }
         } else {
           dpValue <- row['debitParty']
@@ -699,22 +675,16 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
           if (grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
             iBank <- NA
           } else if (grepl(dpValue, obValue, fixed=T) & !grepl(cpValue, bbValue, fixed=T)) {
-            iBank <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-              str_replace_all("^\\s+|\\s+$", "")
+            iBank <- cpValue
           } else if (!grepl(dpValue, obValue, fixed=T) & grepl(cpValue, bbValue, fixed=T)) {
-            iBank <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-              str_replace_all("^\\s+|\\s+$", "")
+            iBank <- dpValue
           } else {
-            iBank1 <- dpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-              str_replace_all("^\\s+|\\s+$", "")
-            iBank2 <- cpValue %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-              str_replace_all("^\\s+|\\s+$", "")
-            iBank <- paste(iBank1, iBank2, sep=", ")
+            iBank <- paste(dpValue, cpValue, sep=", ")
           }
         }
       } else {
         origField <- row['originatorSeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
-        orig <- origField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+        orig <- origField[2]
         oAcctNum <- origField[1]
         if (length(origField) >= 3) {
           oAddr <- origField %>% .[3:length(.)] %>%
@@ -731,20 +701,16 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
         if (!is.na(row['originatorBankSeqb']) & grepl(dpCheck, origCheck, ignore.case=T)) {
           oBank <- row['originatorBankSeqb']
         } else {
-          oBank <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-            gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-            str_replace_all("^\\s+|\\s+$", "")
+          oBank <- row['Originator'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2]
           if (is.na(oBank)) oBank <- row['originatorBank'] %>% str_split("\\s{3}") %>%
               .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
         }
-        iBank <- row['debitParty'] %>%
-          gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-          str_replace_all("^\\s+|\\s+$", "")
+        iBank <- row['debitParty']
       }
       #Beneficiary Bank should be in the Beneficiary field and the Beneficiary should
       #be in the BeneficiarySeqb field.
       bnfField <- row['beneficiarySeqb'] %>% str_split("\\s{3,}|(?<=\\d{5,30})/(?=[A-Z]+)") %>% .[[1]]
-      bnf <- bnfField[2] %>% gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- bnfField[2]
       bAcctNum <- bnfField[1]
       if (length(bnfField) >= 3) {
         bAddr <- bnfField %>% .[3:length(.)] %>%
@@ -753,9 +719,7 @@ parse_hsbc <- function(file, skip = 0, sheet="Details") {
       } else {
         bAddr <- NA
       }
-      bBank <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2] %>%
-        gsub("\\b([A-Z])([A-Z]+)", "\\U\\1\\L\\2", ., perl=T) %>%
-        str_replace_all("^\\s+|\\s+$", "")
+      bBank <- row['Beneficiary'] %>% str_split("\\s{3,}") %>% .[[1]] %>% .[2]
       if (is.na(bBank)) bBank <- row['Beneficiary'] %>% str_split("\\s{3}") %>%
         .[[1]] %>% .[1] %>% str_replace_all("^\\s+|\\s+$", "")
 
@@ -822,7 +786,7 @@ parse_jpmc <- function(file, skip=0, sheet=1) {
     #first (i.e. ordCust2 spills over into ordCust1). So if the originator or
     #beneficiary need to be set to these values, we must first check for any spillover.
     if (is.na(row['ordCust2'])) {
-      orig <- row['drAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      orig <- row['drAddr1']
       oAcctNum <- row['drId']
       oAddr <- paste(row['drAddr2'], row['drAddr3'], row['drAddr4'], collapse=" ") %>%
         str_replace_all(" NA| NULL", "")
@@ -845,7 +809,7 @@ parse_jpmc <- function(file, skip=0, sheet=1) {
     #For the beneficiary, the acctPty2 variable can be empty while the utlBene2
     #field is populated. So need to check both.
     if (is.na(row['acctPty2']) && is.na(row['ultBene2'])) {
-      bnf <- row['crAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bnf <- row['crAddr1']
       bAcctNum <- row['crId']
       bAddr <- paste(row['crAddr2'], row['crAddr3'], row['crAddr4'], collapse=" ") %>%
         str_replace_all(" NA| NULL", "")
@@ -856,8 +820,7 @@ parse_jpmc <- function(file, skip=0, sheet=1) {
         bnf <- row['acctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         bAcctNum <- row['acctPty1']
       } else {
-        bnf <- paste(row['acctPty1'], row['acctPty2'], collapse="") %>%
-          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bnf <- paste(row['acctPty1'], row['acctPty2'], collapse="")
         bAcctNum <- NA
       }
       bAddr <- paste(row['acctPty3'], row['acctPty4'], row['acctPty5'], collapse=" ") %>%
@@ -869,8 +832,7 @@ parse_jpmc <- function(file, skip=0, sheet=1) {
         bnf <- row['ultBene2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
         bAcctNum <- row['ultBene1']
       } else {
-        bnf <- paste(row['ultBene1'], row['ultBene2'], collapse="") %>%
-          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bnf <- paste(row['ultBene1'], row['ultBene2'], collapse="")
         bAcctNum <- NA
       }
       bAddr <- paste(row['ultBene3'], row['ultBene4'], row['ultBene5'], collapse=" ") %>%
@@ -884,10 +846,10 @@ parse_jpmc <- function(file, skip=0, sheet=1) {
     if (is.na(row['ordCust2'])) {
       oBank <- "JPMorgan Chase"
     } else if (is.na(row['ordBank1'])) {
-      oBank <- row['drAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oBank <- row['drAddr1']
     } else {
-      oBank <- row['ordBank1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
-      diBank <- row['drAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      oBank <- row['ordBank1']
+      diBank <- row['drAddr1']
     }
 
     if (is.na(row['acctPty2']) && is.na(row['ultBene2'])) {
@@ -898,12 +860,11 @@ parse_jpmc <- function(file, skip=0, sheet=1) {
       if (isAccountNumber) {
         bBank <- row['acctPty2'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
       } else {
-        bBank <- paste(row['acctPty1'], row['acctPty2'], collapse="") %>%
-          gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+        bBank <- paste(row['acctPty1'], row['acctPty2'], collapse="")
       }
-      ciBank <- row['crAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      ciBank <- row['crAddr1']
     } else {
-      bBank <- row['crAddr1'] %>% gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+      bBank <- row['crAddr1']
     }
 
     if (exists("diBank") && exists("ciBank")) {
@@ -1041,13 +1002,11 @@ parse_tdbank <- function(file) {
     #common OCR mistake is confusing "USD" with "USO", so replace that
     cur[cur == "USO"] <- "USD"
     MIDX <- grep("^OBI\\s+", textBlock)[1]
-    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    memo <- str_extract(textBlock[MIDX], "(?<=OBI\\s{1,10}).*")
 
     #originator/beneficiary info
     OIDX <- grep("^Originator", textBlock, ignore.case=T)[1]
-    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    orig <- str_extract(textBlock[OIDX], "(?<=Originator\\s{1,10}).*")
     OAIDX <- grep("ORG ADDR", textBlock)[1]
     oAddr <- paste(textBlock[OAIDX:(OAIDX+2)], collapse=" ") %>%
       str_replace_all("ORG ADDR\\d", "")
@@ -1057,8 +1016,7 @@ parse_tdbank <- function(file) {
     oAcctNum <- str_extract(textBlock[OANIDX], "(?<=ORG ID\\s{1,10}).*")
 
     BIDX <- grep("^Beneficiary", textBlock, ignore.case=T)[1]
-    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    bnf <- str_extract(textBlock[BIDX], "(?<=Beneficiary\\s{1,10}).*")
     BAIDX <- grep("^BNF ADDR", textBlock)[1]
     bAddr <- paste(textBlock[BAIDX:(BAIDX+2)], collapse=" ") %>%
       str_replace_all("BNF ADDR\\d", "")
@@ -1069,23 +1027,19 @@ parse_tdbank <- function(file) {
     #There is no "Orig Bank" field, but Sender Name appears to be the
     #field we're looking for.
     OBIDX <- grep("^Sender Name", textBlock, ignore.case=T)[1]
-    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    oBank <- str_extract(textBlock[OBIDX], "(?<=Sender Name\\s{1,10}).*")
 
     BBIDX <- grep("^Bene Bank", textBlock, ignore.case=T)[1]
-    bBank <- str_extract(textBlock[BBIDX], "(?<=Bene Bank\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    bBank <- str_extract(textBlock[BBIDX], "(?<=Bene Bank\\s{1,10}).*")
 
     IBIDX <- grep("^Intermd Bank", textBlock, ignore.case=T)[1]
-    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    iBank <- str_extract(textBlock[IBIDX], "(?<=Intermd Bank\\s{1,10}).*")
 
     #There is a fourth bank field called Recv Name. This field appears to never
     #be blank, but Bene Bank and Intermd Bank can be, so need to set this field
     #and then run some logic.
     RBIDX <- grep("^Recv Name", textBlock, ignore.case=T)[1]
-    rBank <- str_extract(textBlock[RBIDX], "(?<=Recv Name\\s{1,10}).*") %>%
-      gsub("\\b([A-z])([A-z]+)", "\\U\\1\\L\\2", ., perl=T)
+    rBank <- str_extract(textBlock[RBIDX], "(?<=Recv Name\\s{1,10}).*")
     #There are two possibilities: 1) Recv Bank is the Intermediary Bank or
     # 2) it's the Beneficiary Bank. Because Recv Bank appears to never be empty,
     #I'm assuming that it is the actual beneficiary bank.
